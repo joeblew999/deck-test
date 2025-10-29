@@ -120,18 +120,7 @@ func defaultCompletionPath(shell string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	switch shell {
-	case "zsh":
-		return filepath.Join(home, ".decktool", "completions", "_decktool"), nil
-	case "bash":
-		return filepath.Join(home, ".decktool", "completions", "decktool.bash"), nil
-	case "fish":
-		return filepath.Join(home, ".config", "fish", "completions", "decktool.fish"), nil
-	case "powershell":
-		return filepath.Join(home, "Documents", "PowerShell", "decktool.ps1"), nil
-	default:
-		return "", nil
-	}
+	return getShellCompletionPath(home, shell)
 }
 
 func defaultRCConfig(shell, completionPath string) (rcPath, snippet string) {
@@ -139,22 +128,20 @@ func defaultRCConfig(shell, completionPath string) (rcPath, snippet string) {
 	if err != nil {
 		return "", ""
 	}
-	switch shell {
-	case "zsh":
-		rc := filepath.Join(home, ".zshrc")
-		snippet = fmt.Sprintf("\n# decktool completions\nif [ -f %q ]; then\n  source %q\nfi\n", completionPath, completionPath)
-		return rc, snippet
-	case "bash":
-		rc := filepath.Join(home, ".bashrc")
-		snippet = fmt.Sprintf("\n# decktool completions\nif [ -f %q ]; then\n  . %q\nfi\n", completionPath, completionPath)
-		return rc, snippet
-	case "powershell":
-		rc := filepath.Join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1")
-		snippet = fmt.Sprintf("\n# decktool completions\nif (Test-Path %q) { . %q }\n", completionPath, completionPath)
-		return rc, snippet
-	default:
+	rc := getShellRCPath(home, shell)
+	if rc == "" {
 		return "", ""
 	}
+
+	switch shell {
+	case "zsh":
+		snippet = fmt.Sprintf("\n# decktool completions\nif [ -f %q ]; then\n  source %q\nfi\n", completionPath, completionPath)
+	case "bash":
+		snippet = fmt.Sprintf("\n# decktool completions\nif [ -f %q ]; then\n  . %q\nfi\n", completionPath, completionPath)
+	case "powershell":
+		snippet = fmt.Sprintf("\n# decktool completions\nif (Test-Path %q) { . %q }\n", completionPath, completionPath)
+	}
+	return rc, snippet
 }
 
 func ensureShellSnippet(rcPath, snippet string) error {

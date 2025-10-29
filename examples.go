@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -53,11 +52,11 @@ func (cfg *config) runExamples(ctx context.Context, examples []string) (map[stri
 	results := make(map[string]string)
 	for _, raw := range examples {
 		source, name := parseExample(raw)
-		dir, err := cfg.exampleDir(source, name)
+		dir, err := cfg.getExampleDir(source, name)
 		if err != nil {
 			return nil, err
 		}
-		dshPath := filepath.Join(dir, name+".dsh")
+		dshPath := cfg.getExampleDshPath(dir, name)
 		if _, err := os.Stat(dshPath); err != nil {
 			fmt.Printf("Skipping %s: %v\n", normalizeExampleName(raw), err)
 			continue
@@ -67,7 +66,7 @@ func (cfg *config) runExamples(ctx context.Context, examples []string) (map[stri
 			return nil, err
 		}
 
-		xmlPath := filepath.Join(dir, name+".xml")
+		xmlPath := cfg.getExampleXmlPath(dir, name)
 		if err := cfg.renderDeck(ctx, dir, name+".dsh", xmlPath); err != nil {
 			return nil, err
 		}
@@ -129,23 +128,12 @@ func (cfg *config) resolveBinary(name string) (string, error) {
 	}
 
 	// Finally check goBinDir
-	path := filepath.Join(cfg.goBinDir, name)
+	path := cfg.getGoBinPath(name)
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
 
 	return "", fmt.Errorf("%s not found in %s, PATH, or %s", name, cfg.distDir, cfg.goBinDir)
-}
-
-func (cfg *config) exampleDir(source, name string) (string, error) {
-	switch source {
-	case "deckviz":
-		return filepath.Join(cfg.repos["deckviz"].dir, name), nil
-	case "dubois":
-		return filepath.Join(cfg.repos["dubois"].dir, name), nil
-	default:
-		return "", fmt.Errorf("unknown example source %q", source)
-	}
 }
 
 func (cfg *config) exampleCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

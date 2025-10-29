@@ -232,6 +232,63 @@ func (cfg *config) getDistGlob() string {
 	return filepath.Join(filepath.Base(cfg.distDir), "*")
 }
 
+// getGoBinPath returns the path to a binary in the go bin directory
+func (cfg *config) getGoBinPath(name string) string {
+	return filepath.Join(cfg.goBinDir, name)
+}
+
+// getExampleDir returns the directory path for an example
+func (cfg *config) getExampleDir(source, name string) (string, error) {
+	switch source {
+	case "deckviz":
+		return filepath.Join(cfg.repos["deckviz"].dir, name), nil
+	case "dubois":
+		return filepath.Join(cfg.repos["dubois"].dir, name), nil
+	default:
+		return "", fmt.Errorf("unknown example source %q", source)
+	}
+}
+
+// getExampleDshPath returns the path to an example's .dsh file
+func (cfg *config) getExampleDshPath(dir, name string) string {
+	return filepath.Join(dir, name+".dsh")
+}
+
+// getExampleXmlPath returns the path to an example's .xml output file
+func (cfg *config) getExampleXmlPath(dir, name string) string {
+	return filepath.Join(dir, name+".xml")
+}
+
+// getShellCompletionPath returns the default path for shell completion file
+func getShellCompletionPath(home, shell string) (string, error) {
+	switch shell {
+	case "zsh":
+		return filepath.Join(home, ".decktool", "completions", "_decktool"), nil
+	case "bash":
+		return filepath.Join(home, ".decktool", "completions", "decktool.bash"), nil
+	case "fish":
+		return filepath.Join(home, ".config", "fish", "completions", "decktool.fish"), nil
+	case "powershell":
+		return filepath.Join(home, "Documents", "PowerShell", "decktool.ps1"), nil
+	default:
+		return "", nil
+	}
+}
+
+// getShellRCPath returns the path to shell RC file
+func getShellRCPath(home, shell string) string {
+	switch shell {
+	case "zsh":
+		return filepath.Join(home, ".zshrc")
+	case "bash":
+		return filepath.Join(home, ".bashrc")
+	case "powershell":
+		return filepath.Join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1")
+	default:
+		return ""
+	}
+}
+
 // =============================================================================
 // Repository Management
 // =============================================================================
