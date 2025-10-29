@@ -23,6 +23,7 @@ const (
 	dataDir = ".data"
 	srcDir  = ".src"
 	distDir = ".dist"
+	fontsDir = ".fonts"
 )
 
 // =============================================================================
@@ -71,7 +72,7 @@ type config struct {
 	gitCmd       string
 	goBinDir     string
 	distDir      string // absolute path to dist directory
-	deckfontsEnv string
+	fontsDir     string // absolute path to fonts directory
 	repos        map[string]*repoConfig
 	toolchain    []binSpec
 	skipEnsure   bool
@@ -114,6 +115,9 @@ func loadConfig() (*config, error) {
 	cfg.initDataRepos()
 	cfg.initCodeRepos()
 	cfg.initToolchain()
+	if err := cfg.initFontsRepo(); err != nil {
+		return nil, err
+	}
 
 	// Resolve go bin directory
 	binDir, err := resolveGoBin(cfg.goCmd)
@@ -127,11 +131,17 @@ func loadConfig() (*config, error) {
 
 func (cfg *config) initDataRepos() {
 	cfg.addDataRepo("deckviz", "deckviz", "master")
-	cfg.addDataRepo("deckfonts", "deckfonts", "master")
 
 	dubois := cfg.addDataRepo("dubois", "dubois-data-portraits", "master")
 	dubois.filterRaw = getenvDefault("DUBOIS_FILTER", "--filter=blob:none")
 	dubois.sparseRaw = os.Getenv("DUBOIS_SPARSE")
+}
+
+func (cfg *config) initFontsRepo() error {
+	// Clone deckfonts directly to .fonts directory (not in repos map)
+	fontsPath := getenvDefault("DECKFONTS_DIR", fontsDir)
+	cfg.fontsDir = fontsPath // Store relative path, will be made absolute in finalize()
+	return nil
 }
 
 func (cfg *config) initCodeRepos() {
@@ -208,13 +218,9 @@ func (cfg *config) finalize() error {
 		return fmt.Errorf("resolve dist dir: %w", err)
 	}
 
-	// Set DECKFONTS environment variable
-	envFonts := strings.TrimSpace(os.Getenv("DECKFONTS"))
-	if envFonts == "" {
-		envFonts = cfg.repos["deckfonts"].dir
-	}
-	if cfg.deckfontsEnv, err = absPath(envFonts); err != nil {
-		return err
+	// Resolve fonts directory to absolute path
+	if cfg.fontsDir, err = absPath(cfg.fontsDir); err != nil {
+		return fmt.Errorf("resolve fonts dir: %w", err)
 	}
 
 	return nil

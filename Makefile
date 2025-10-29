@@ -8,18 +8,18 @@ TEST_EXAMPLE := deckviz/fire
 TEST_EXAMPLE_PATH := .data/deckviz/fire
 
 # Default target
-all: build
+all: dev-build
 
 # Build all binaries (native, wasm, wasi)
-build:
+dev-build:
 	$(GO_RUN) dev-build $(NO_SYNC)
 
 # Build and create GitHub release
-release:
+dev-release:
 	$(GO_RUN) dev-release
 
 # Create GitHub release (skip build if already built)
-release-fast:
+dev-release-fast:
 	$(GO_RUN) dev-release --skip-build
 
 # Ensure binaries and repositories are up to date

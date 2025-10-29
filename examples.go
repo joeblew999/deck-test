@@ -30,8 +30,8 @@ func (cfg *config) listExamples() ([]string, error) {
 func (cfg *config) examplesBySource() (map[string][]string, error) {
 	result := make(map[string][]string)
 	for name, repo := range cfg.repos {
-		// Only include data repos that contain examples (not deckfonts)
-		if !repo.isData || name == "deckfonts" {
+		// Only include data repos that contain examples
+		if !repo.isData {
 			continue
 		}
 		result[name] = collectExampleNames(repo.dir)
@@ -45,7 +45,7 @@ func (cfg *config) runExamples(ctx context.Context, examples []string) (map[stri
 	// DECKFONTS may need to be exported in the shell before running decktool for
 	// the view/run commands to work properly. The ensure command prints the export.
 	oldDeckfonts := os.Getenv("DECKFONTS")
-	os.Setenv("DECKFONTS", cfg.deckfontsEnv)
+	os.Setenv("DECKFONTS", cfg.fontsDir)
 	defer func() {
 		if oldDeckfonts != "" {
 			os.Setenv("DECKFONTS", oldDeckfonts)

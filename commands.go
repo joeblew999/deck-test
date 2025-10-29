@@ -149,7 +149,7 @@ func newViewCommand(cfg *config) *cobra.Command {
 			}
 			viewCmd := exec.CommandContext(cmd.Context(), ebdeckPath, xmlPath)
 			viewCmd.Dir = exampleDir
-			viewCmd.Env = append(os.Environ(), "DECKFONTS="+cfg.deckfontsEnv)
+			viewCmd.Env = append(os.Environ(), "DECKFONTS="+cfg.fontsDir)
 			viewCmd.Stdout = os.Stdout
 			viewCmd.Stderr = os.Stderr
 			return viewCmd.Run()
