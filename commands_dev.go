@@ -3,14 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
 
-// Development commands: dev-build, dev-release, dev-clean
+// Dev commands
+
+// Dev commands
 
 func newDevBuildCommand(cfg *config) *cobra.Command {
 	cmd := &cobra.Command{
@@ -44,39 +44,32 @@ Examples:
 
 			// Report results
 			fmt.Println("\n=== Build Results ===")
-			successCount := 0
-			failCount := 0
-			skipCount := 0
-
+			successes := 0
+			failures := 0
+			skipped := 0
 			for _, result := range results {
-				status := "✓"
-				msg := result.path
 				if result.err != nil {
 					if strings.Contains(result.err.Error(), "not supported") {
-						status = "⊘"
-						skipCount++
-						msg = result.err.Error()
+						fmt.Printf("⊘ %s: %v\n", result.binary, result.err)
+						skipped++
 					} else {
-						status = "✗"
-						failCount++
-						msg = result.err.Error()
+						fmt.Printf("✗ %s: %v\n", result.binary, result.err)
+						failures++
 					}
 				} else {
-					successCount++
+					fmt.Printf("✓ %s\n", result.path)
+					successes++
 				}
-				fmt.Printf("%s %s (%s): %s\n", status, result.binary, result.target, msg)
 			}
+			fmt.Printf("\nTotal: %d succeeded, %d failed, %d skipped\n", successes, failures, skipped)
 
-			fmt.Printf("\nSummary: %d succeeded, %d failed, %d skipped\n", successCount, failCount, skipCount)
-
-			if failCount > 0 {
+			if failures > 0 {
 				return fmt.Errorf("some builds failed")
 			}
 
 			return nil
 		},
 	}
-
 	return cmd
 }
 
@@ -125,90 +118,17 @@ Examples:
 
 			// Generate version if not specified
 			if version == "" {
-				version = fmt.Sprintf("dev-%s", time.Now().Format("20060102-150405"))
+				version = cfg.generateReleaseVersion()
 				prerelease = true
 			}
 
-			// Ensure gh CLI is installed
-			if err := cfg.ensureGhCli(ctx); err != nil {
-				return err
-			}
-
-			// Check authentication
-			authCmd := exec.CommandContext(ctx, "gh", "auth", "status")
-			if err := authCmd.Run(); err != nil {
-				fmt.Println("Please authenticate with GitHub:")
-				loginCmd := exec.CommandContext(ctx, "gh", "auth", "login")
-				loginCmd.Stdin = os.Stdin
-				loginCmd.Stdout = os.Stdout
-				loginCmd.Stderr = os.Stderr
-				if err := loginCmd.Run(); err != nil {
-					return fmt.Errorf("authentication failed: %w", err)
-				}
-			}
-
-			// Get repo name for release notes
-			repoCmd := exec.CommandContext(ctx, "gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")
-			repoOutput, err := repoCmd.Output()
-			if err != nil {
-				return fmt.Errorf("failed to get repo info: %w", err)
-			}
-			repoName := strings.TrimSpace(string(repoOutput))
-
-			// Create release notes
-			releaseType := "Release"
-			if prerelease {
-				releaseType = "Development Release"
-			}
-
-			notes := fmt.Sprintf(`## %s
-
-Automated build created on %s
-
-### Binaries
-
-Includes 26 binaries: 10 native, 8 WASM, 8 WASI
-
-### Quick Start
-
-Download and run a binary:
-`+"```"+`bash
-wget https://github.com/%s/releases/download/%s/decksh-darwin-arm64
-chmod +x decksh-darwin-arm64
-./decksh-darwin-arm64 --help
-`+"```"+`
-
-For WASM binaries, use with a WebAssembly runtime like wasmtime or wasmer.
-`, releaseType, time.Now().Format("2006-01-02 15:04:05"), repoName, version)
-
-			// Build gh release create command
-			releaseArgs := []string{"release", "create", version}
-			releaseArgs = append(releaseArgs, "--title", fmt.Sprintf("%s %s", releaseType, version))
-			releaseArgs = append(releaseArgs, "--notes", notes)
-			if prerelease {
-				releaseArgs = append(releaseArgs, "--prerelease")
-			}
-			releaseArgs = append(releaseArgs, cfg.getDistGlob())
-
-			fmt.Printf("Creating release %s...\n", version)
-			releaseCmd := exec.CommandContext(ctx, "gh", releaseArgs...)
-			releaseCmd.Stdout = os.Stdout
-			releaseCmd.Stderr = os.Stderr
-			if err := releaseCmd.Run(); err != nil {
-				return fmt.Errorf("failed to create release: %w", err)
-			}
-
-			fmt.Printf("\n✓ Release %s created successfully!\n", version)
-			fmt.Printf("View at: https://github.com/%s/releases/tag/%s\n", repoName, version)
-
-			return nil
+			// Create GitHub release
+			return cfg.createGithubRelease(ctx, version, prerelease)
 		},
 	}
-
-	cmd.Flags().BoolVar(&skipBuild, "skip-build", false, "Skip building and use existing dist/ binaries")
-	cmd.Flags().BoolVar(&prerelease, "prerelease", false, "Mark as prerelease (auto-enabled for dev-* versions)")
-	cmd.Flags().StringVar(&version, "version", "", "Version tag (default: auto-generated timestamp)")
-
+	cmd.Flags().BoolVar(&skipBuild, "skip-build", false, "skip building binaries, use existing dist/ files")
+	cmd.Flags().BoolVar(&prerelease, "prerelease", false, "mark as prerelease (default for auto-versioned releases)")
+	cmd.Flags().StringVar(&version, "version", "", "version tag (default: auto-generated timestamp)")
 	return cmd
 }
 
@@ -216,28 +136,29 @@ func newDevCleanCommand(cfg *config) *cobra.Command {
 	return &cobra.Command{
 		Use:   "dev-clean",
 		Short: "Remove all dot folders (.data, .src, .dist, .fonts) for fresh start",
+		Long: `Remove all cached data folders including repositories, source code, built binaries, and fonts.
+
+This is useful for starting fresh or troubleshooting issues.
+
+Examples:
+  decktool dev-clean`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Get all directories from config
-			dirsToRemove := []string{
-				dataDir,
-				srcDir,
-				distDir,
-				fontsDir,
+			// Remove dot folders defined in config
+			folders := []string{cfg.distDir, cfg.fontsDir}
+			for _, repo := range cfg.repos {
+				folders = append(folders, repo.dir)
 			}
 
-			for _, dir := range dirsToRemove {
-				if _, err := os.Stat(dir); err == nil {
-					fmt.Printf("Removing %s...\n", dir)
-					if err := os.RemoveAll(dir); err != nil {
-						return fmt.Errorf("failed to remove %s: %w", dir, err)
+			for _, folder := range folders {
+				if _, err := os.Stat(folder); err == nil {
+					fmt.Printf("Removing %s...\n", folder)
+					if err := os.RemoveAll(folder); err != nil {
+						return fmt.Errorf("failed to remove %s: %w", folder, err)
 					}
-					fmt.Printf("✓ Removed %s\n", dir)
-				} else {
-					fmt.Printf("  Skipping %s (doesn't exist)\n", dir)
 				}
 			}
 
-			fmt.Println("\n✓ Dev clean complete - all dot folders removed")
+			fmt.Println("✓ All dot folders removed")
 			return nil
 		},
 	}

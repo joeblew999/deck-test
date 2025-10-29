@@ -37,11 +37,8 @@ deck-test
 
 # Build artifacts and repositories
 .data/
+.dist/
+.fonts/
 .src/
-.dist/
-
-.dist/
-
-.fonts
 
 
