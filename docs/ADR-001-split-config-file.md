@@ -108,78 +108,56 @@ util.go (~100 lines)
 
 ## Migration Plan
 
-### Why Move To v1/ First
+### Why v2/ Folder Instead of v1/
 
-**Critical insight**: Moving current code to v1/ BEFORE splitting allows reading v1/config.go as reference while writing new files, instead of destructive in-place editing.
-
-#### Without v1/:
-```bash
-# Risky: Must edit config.go in place with sed/awk
-sed -n '340,360p' config.go > repos.go  # Extract functions
-sed -i '340,360d' config.go             # Delete from original
-# If something breaks, hard to recover
-```
-
-#### With v1/:
-```bash
-# Safe: Read from v1/, write to new files
-cat v1/config.go  # Reference (read-only)
-# Copy functions to new repos.go, paths.go, etc.
-# Old code still works in v1/ for comparison
-# No destructive edits with sed/awk
-```
+**Critical insight**: Keep current working code in root, create new split files in v2/ subdirectory.
 
 #### Benefits:
+1. **Current code keeps working** - Root directory unchanged, all commands work
+2. **No dependency issues** - v2/ can reference ../.data, ../.src, ../.dist
+3. **Clear naming** - Root = current, v2/ = new refactored version
+4. **Easy comparison** - Can diff root vs v2/ files
+5. **Safe migration** - When v2/ works, just move files up and delete old ones
 
-1. **No more sed/awk editing** - Just read v1/ and write new files
-2. **Old code preserved** - v1/ keeps working during migration
-3. **Easy comparison** - Can diff v1/ vs new code
-4. **Safe rollback** - If new code breaks, v1/ still works
-5. **Clear progress** - Can see exactly what's been migrated
+### Phase 1: Create v2/ Directory Structure
+1. Create v2/ directory
+2. Copy go.mod, go.sum to v2/ (needed for imports)
+3. Update v2/go.mod if needed for module path
+4. Create empty files: v2/repos.go, v2/paths.go, v2/build.go, v2/workspace.go, v2/util.go, v2/config.go
 
-### Phase 1: Preserve Current Code (Exact Working Copy)
+### Phase 2: Populate v2/ Files (reading from root)
+1. Create v2/repos.go - Read repository functions from root config.go, copy to new file
+2. Test: `cd v2 && go build`
+3. Create v2/paths.go - Read path functions from root config.go, copy to new file  
+4. Test: `cd v2 && go build`
+5. Create v2/build.go - Read build functions from root config.go, copy to new file
+6. Test: `cd v2 && go build`
+7. Create v2/workspace.go - Read workspace function from root config.go, copy to new file
+8. Test: `cd v2 && go build`
+9. Create v2/util.go - Read utility functions from root config.go, copy to new file
+10. Test: `cd v2 && go build`
+11. Create v2/config.go - Copy core config struct, constants, loadConfig(), finalize()
+12. Test: `cd v2 && go build`
+13. Copy v2/commands.go, v2/examples.go, v2/setup.go, v2/main.go from root
+14. Update imports in v2/*.go to reference other v2 files
+15. Test: `cd v2 && go build`
 
-**Goal**: Create exact working copy in v1/ as reference (NO modifications)
+### Phase 3: Validate v2/ Works
+1. Copy Makefile to v2/
+2. Run full test suite: `cd v2 && make test`
+3. Compare behavior with root version
+4. Commit: "Create v2/ with split single-responsibility files"
 
-1. Create v1/ directory
-2. Copy ALL project files to v1/ (preserving exact state):
-   - *.go (source code)
-   - go.mod, go.sum (dependencies - DO NOT modify)
-   - Makefile (build commands)
-   - README.md (documentation)
-   - CLAUDE.md (development rules)
-   - .gitignore (git config)
-3. **DO NOT modify anything in v1/** - it must remain working as-is
-4. Test v1/ works exactly as before: `cd v1 && DECKFONTS_DIR=../.data/deckfonts go run . examples --no-sync | head -10`
-5. Commit: "Copy current working code to v1/ for reference during refactoring"
-
-**Important**: v1/ is a read-only reference. All new development happens in root directory.
-### Phase 2: Create New Split Files (reading from v1/)
-1. Create repos.go - Read repository functions from v1/config.go, copy to new file
-2. Test: `go build`
-3. Create paths.go - Read path functions from v1/config.go, copy to new file  
-4. Test: `go build`
-5. Create build.go - Read build functions from v1/config.go, copy to new file
-6. Test: `go build`
-7. Create workspace.go - Read workspace function from v1/config.go, copy to new file
-8. Test: `go build`
-9. Create util.go - Read utility functions from v1/config.go, copy to new file
-10. Test: `go build`
-11. Create config.go - Copy core config struct, constants, loadConfig(), finalize()
-12. Test: `go build`
-
-### Phase 3: Validate
-1. Run full test suite: `make test`
-2. Compare behavior with v1/
-3. Commit: "Split config into single-responsibility files"
-
-### Phase 4: Cleanup
-1. Delete v1/ directory once confident
-2. Commit: "Remove v1/ after successful migration"
+### Phase 4: Replace Root With v2/
+1. Delete old root *.go files (except those in v2/)
+2. Move v2/*.go to root
+3. Test root still works: `make test`
+4. Delete v2/ directory
+5. Commit: "Replace monolithic files with split v2/ version"
 
 ### Key Principle
 
-**Never use sed/awk to destructively edit files. Always read from source, write to new destination.**
+**Never use sed/awk to destructively edit files. Always read from source (root config.go), write to new destination (v2/).**
 ## Risks
 
 - Must ensure all functions remain accessible (exported names)
