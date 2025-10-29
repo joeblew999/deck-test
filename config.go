@@ -84,12 +84,6 @@ func (t buildTarget) buildEnv() (goos, goarch string) {
 	}
 }
 
-func (t buildTarget) extension() string {
-	if t == targetWASM || t == targetWASI {
-		return ".wasm"
-	}
-	return ""
-}
 
 // =============================================================================
 // Config Loading and Initialization
