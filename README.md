@@ -4,17 +4,27 @@ Test harness for deck examples with WASM/WASI support.
 
 **Releases:** https://github.com/joeblew999/deck-test/releases
 
+
+## What It Does
+
+- Downloads deck example data (deckviz, dubois, deckfonts)
+- Clones & builds deck Go repos (decksh, pdfdeck, gift, etc.)
+- Compiles to native, WASM, and WASI targets
+- Runs examples and opens results
+
 ## Quick Start
 
 ```bash
-# Get binaries
+# Get binaries and data ( that has exmales)
 go run . ensure
 
 # List examples
 go run . examples
 
 # Run an example
-go run . deckviz/fire
+go run . run deckviz/fire
+# View an example 
+go run . view deckviz/fire
 ```
 
 ## Build & Release
@@ -27,18 +37,4 @@ go run . dev-build
 go run . dev-release
 ```
 
-## What It Does
 
-- Downloads deck example data (deckviz, dubois, deckfonts)
-- Clones & builds deck Go repos (decksh, pdfdeck, gift, etc.)
-- Compiles to native, WASM, and WASI targets
-- Runs examples and opens results
-
-## Commands
-
-- `ensure` - Get binaries from GitHub release or build locally
-- `examples` - List all available examples
-- `run [example]` - Lint and render an example
-- `view [example]` - Open example in ebdeck
-- `dev-build` - Build binaries for native/WASM/WASI
-- `dev-release` - Create GitHub release with all binaries
