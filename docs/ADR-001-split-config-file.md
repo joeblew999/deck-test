@@ -139,11 +139,16 @@ cat v1/config.go  # Reference (read-only)
 
 ### Phase 1: Preserve Current Code
 1. Create v1/ directory
-2. Move all *.go files to v1/
-3. Update imports/paths as needed
-4. Test v1/ works
-5. Commit: "Move current code to v1/ for safe refactoring"
-
+2. Move ALL project files to v1/ (not just *.go):
+   - *.go (source code)
+   - go.mod, go.sum (dependencies)
+   - Makefile (build commands)
+   - README.md (documentation)
+   - CLAUDE.md (development rules)
+   - .gitignore (git config)
+3. Update v1/go.mod module path if needed
+4. Test v1/ works independently: `cd v1 && make test`
+5. Commit: "Move current working code to v1/ for safe refactoring"
 ### Phase 2: Create New Split Files (reading from v1/)
 1. Create repos.go - Read repository functions from v1/config.go, copy to new file
 2. Test: `go build`
