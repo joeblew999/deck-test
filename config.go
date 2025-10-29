@@ -18,11 +18,9 @@ import (
 
 // Directory structure constants
 const (
-	dataDir   = ".data"
-	srcDir    = ".src"
-	distDir   = "dist"
-	binDir    = "bin"
-	goWorkDir = ".src"
+	dataDir = ".data"
+	srcDir  = ".src"
+	distDir = ".dist"
 )
 
 // =============================================================================
@@ -70,6 +68,7 @@ type config struct {
 	goCmd        string
 	gitCmd       string
 	goBinDir     string
+	distDir      string // absolute path to dist directory
 	deckfontsEnv string
 	repos        map[string]*repoConfig
 	toolchain    []binSpec
@@ -127,7 +126,7 @@ func loadConfig() (*config, error) {
 func (cfg *config) initDataRepos() {
 	cfg.addDataRepo("deckviz", "deckviz", "master")
 	cfg.addDataRepo("deckfonts", "deckfonts", "master")
-	
+
 	dubois := cfg.addDataRepo("dubois", "dubois-data-portraits", "master")
 	dubois.filterRaw = getenvDefault("DUBOIS_FILTER", "--filter=blob:none")
 	dubois.sparseRaw = os.Getenv("DUBOIS_SPARSE")
@@ -148,16 +147,16 @@ func (cfg *config) initToolchain() {
 		{name: "decksh", pkg: "github.com/ajstarks/decksh/cmd/decksh", repo: "decksh", wasmSupport: true, wasiSupport: true},
 		{name: "dshfmt", pkg: "github.com/ajstarks/decksh/cmd/dshfmt", repo: "decksh", wasmSupport: true, wasiSupport: true},
 		{name: "dshlint", pkg: "github.com/ajstarks/decksh/cmd/dshlint", repo: "decksh", wasmSupport: true, wasiSupport: true},
-		
+
 		// deck tools
 		{name: "pdfdeck", pkg: "github.com/ajstarks/deck/cmd/pdfdeck", repo: "deck", wasmSupport: true, wasiSupport: true},
 		{name: "pngdeck", pkg: "github.com/ajstarks/deck/cmd/pngdeck", repo: "deck", wasmSupport: true, wasiSupport: true},
 		{name: "svgdeck", pkg: "github.com/ajstarks/deck/cmd/svgdeck", repo: "deck", wasmSupport: true, wasiSupport: true},
-		
+
 		// gift tools
 		{name: "gift", pkg: "github.com/ajstarks/gift", repo: "gift", wasmSupport: true, wasiSupport: true},
 		{name: "giftsh", pkg: "github.com/ajstarks/giftsh", repo: "giftsh", wasmSupport: true, wasiSupport: true},
-		
+
 		// UI apps (native only)
 		{name: "ebdeck", pkg: "github.com/ajstarks/ebcanvas/ebdeck", repo: "ebcanvas", requiresUI: true},
 		{name: "gcdeck", pkg: "github.com/ajstarks/giocanvas/gcdeck", repo: "giocanvas", requiresUI: true},
@@ -172,7 +171,7 @@ func (cfg *config) addDataRepo(name, dir, branch string) *repoConfig {
 	repo := &repoConfig{
 		name:   name,
 		url:    getenvDefault(strings.ToUpper(name)+"_REPO", fmt.Sprintf("https://github.com/ajstarks/%s.git", dir)),
-		dir:    getenvDefault(strings.ToUpper(name)+"_DIR", ".data/"+dir),
+		dir:    getenvDefault(strings.ToUpper(name)+"_DIR", filepath.Join(dataDir, dir)),
 		branch: getenvDefault(strings.ToUpper(name)+"_BRANCH", branch),
 		depth:  getenvInt(strings.ToUpper(name)+"_DEPTH", 1),
 		isData: true,
@@ -185,7 +184,7 @@ func (cfg *config) addCodeRepo(name, branch string) *repoConfig {
 	repo := &repoConfig{
 		name:   name,
 		url:    getenvDefault(strings.ToUpper(name)+"_REPO", fmt.Sprintf("https://github.com/ajstarks/%s.git", name)),
-		dir:    getenvDefault(strings.ToUpper(name)+"_DIR", ".src/"+name),
+		dir:    getenvDefault(strings.ToUpper(name)+"_DIR", filepath.Join(srcDir, name)),
 		branch: getenvDefault(strings.ToUpper(name)+"_BRANCH", branch),
 		depth:  getenvInt(strings.ToUpper(name)+"_DEPTH", 1),
 		isData: false,
@@ -209,12 +208,17 @@ func (cfg *config) finalize() error {
 		repo.sparse = strings.Fields(strings.TrimSpace(repo.sparseRaw))
 	}
 
+	// Resolve dist directory to absolute path
+	var err error
+	if cfg.distDir, err = absPath(distDir); err != nil {
+		return fmt.Errorf("resolve dist dir: %w", err)
+	}
+
 	// Set DECKFONTS environment variable
 	envFonts := strings.TrimSpace(os.Getenv("DECKFONTS"))
 	if envFonts == "" {
 		envFonts = cfg.repos["deckfonts"].dir
 	}
-	var err error
 	if cfg.deckfontsEnv, err = absPath(envFonts); err != nil {
 		return err
 	}
@@ -332,16 +336,16 @@ func (cfg *config) runGit(ctx context.Context, args ...string) error {
 // =============================================================================
 
 func (cfg *config) ensureWorkspace(ctx context.Context) error {
-	if err := os.MkdirAll(".src", 0755); err != nil {
-		return fmt.Errorf("create .src dir: %w", err)
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		return fmt.Errorf("create %s dir: %w", srcDir, err)
 	}
 
-	workFile := ".src/go.work"
-	
+	workFile := filepath.Join(srcDir, "go.work")
+
 	// Build workspace content
 	var dirs []string
 	dirs = append(dirs, "..") // Parent directory (deck-test)
-	
+
 	for _, repo := range cfg.repos {
 		if !repo.isData {
 			repoName := filepath.Base(repo.dir)
@@ -359,7 +363,7 @@ func (cfg *config) ensureWorkspace(ctx context.Context) error {
 		return fmt.Errorf("write go.work: %w", err)
 	}
 
-	fmt.Println("✓ Created .src/go.work workspace file")
+	fmt.Printf("✓ Created %s/go.work workspace file\n", srcDir)
 	return nil
 }
 
@@ -393,18 +397,18 @@ func (cfg *config) buildBinary(ctx context.Context, spec binSpec, target buildTa
 		return result
 	}
 
-	// Make output path absolute (needed because we run from .src/)
+	// Make output path absolute (needed because we run from srcDir)
 	absOutPath, err := filepath.Abs(outPath)
 	if err != nil {
 		result.err = fmt.Errorf("abs path: %w", err)
 		return result
 	}
 
-	// Build from .src/ directory using go.work
+	// Build from srcDir using go.work
 	fmt.Printf("Building %s for %s...\n", spec.name, target)
 
 	cmd := exec.CommandContext(ctx, cfg.goCmd, "build", "-o", absOutPath, spec.pkg)
-	cmd.Dir = ".src" // Run from workspace directory
+	cmd.Dir = srcDir // Run from workspace directory
 
 	// Set cross-compilation environment
 	goos, goarch := target.buildEnv()
@@ -492,6 +496,7 @@ func copyFile(src, dst string) error {
 	}
 	return os.Chmod(dst, info.Mode())
 }
+
 // =============================================================================
 // GitHub Release Download
 // =============================================================================
@@ -535,7 +540,7 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 	}
 
 	// Create dist directory if it doesn't exist
-	if err := os.MkdirAll(distDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.distDir, 0755); err != nil {
 		return fmt.Errorf("create dist dir: %w", err)
 	}
 
@@ -544,7 +549,7 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 	skipped := 0
 	for _, spec := range cfg.toolchain {
 		filename := cfg.buildFilename(spec.name, targetNative)
-		destPath := filepath.Join(distDir, filename)
+		destPath := filepath.Join(cfg.distDir, filename)
 
 		// Check if local binary exists and compare timestamps
 		fileInfo, err := os.Stat(destPath)
@@ -560,7 +565,7 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 		}
 
 		fmt.Printf("Downloading %s...\n", filename)
-		downloadCmd := exec.CommandContext(ctx, "gh", "release", "download", releaseTag, "-p", filename, "-D", distDir, "--clobber")
+		downloadCmd := exec.CommandContext(ctx, "gh", "release", "download", releaseTag, "-p", filename, "-D", cfg.distDir, "--clobber")
 		downloadCmd.Stdout = os.Stdout
 		downloadCmd.Stderr = os.Stderr
 		if err := downloadCmd.Run(); err != nil {
@@ -584,4 +589,9 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// getBinaryPath returns the path to a platform-specific binary in the dist directory
+func (cfg *config) getBinaryPath(name string) string {
+	return filepath.Join(cfg.distDir, name+"-"+runtime.GOOS+"-"+runtime.GOARCH)
 }

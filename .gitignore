@@ -34,6 +34,7 @@ go.work.sum
 # Build artifacts and repositories
 .data/
 .src/
+.dist/
 bin/
 dist/
 

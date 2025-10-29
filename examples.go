@@ -36,6 +36,20 @@ func (cfg *config) examplesBySource() (map[string][]string, error) {
 }
 
 func (cfg *config) runExamples(ctx context.Context, examples []string) (map[string]string, error) {
+	// Set DECKFONTS for all child processes
+	// NOTE: Due to a quirk with how Go's os.Setenv() interacts with some binaries,
+	// DECKFONTS may need to be exported in the shell before running decktool for
+	// the view/run commands to work properly. The ensure command prints the export.
+	oldDeckfonts := os.Getenv("DECKFONTS")
+	os.Setenv("DECKFONTS", cfg.deckfontsEnv)
+	defer func() {
+		if oldDeckfonts != "" {
+			os.Setenv("DECKFONTS", oldDeckfonts)
+		} else {
+			os.Unsetenv("DECKFONTS")
+		}
+	}()
+
 	results := make(map[string]string)
 	for _, raw := range examples {
 		source, name := parseExample(raw)
@@ -84,9 +98,6 @@ func (cfg *config) renderDeck(ctx context.Context, dir, script, output string) e
 
 	cmd := exec.CommandContext(ctx, deckshPath, script)
 	cmd.Dir = dir
-	deckfontsEnv := "DECKFONTS=" + cfg.deckfontsEnv
-	fmt.Fprintf(os.Stderr, "DEBUG: Setting %s\n", deckfontsEnv)
-	cmd.Env = append(os.Environ(), deckfontsEnv)
 	cmd.Stdout = file
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -100,21 +111,30 @@ func (cfg *config) runTool(ctx context.Context, dir, tool, arg string) error {
 	fmt.Printf("Linting %s/%s\n", dir, arg)
 	cmd := exec.CommandContext(ctx, path, arg)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "DECKFONTS="+cfg.deckfontsEnv)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
 func (cfg *config) resolveBinary(name string) (string, error) {
+	// Check dist/ directory first (our downloaded binaries)
+	distPath := cfg.getBinaryPath(name)
+	if _, err := os.Stat(distPath); err == nil {
+		return distPath, nil
+	}
+
+	// Fallback to PATH
 	if path, err := exec.LookPath(name); err == nil {
 		return path, nil
 	}
+
+	// Finally check goBinDir
 	path := filepath.Join(cfg.goBinDir, name)
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
-	return "", fmt.Errorf("%s not found in PATH or %s", name, cfg.goBinDir)
+
+	return "", fmt.Errorf("%s not found in %s, PATH, or %s", name, cfg.distDir, cfg.goBinDir)
 }
 
 func (cfg *config) exampleDir(source, name string) (string, error) {

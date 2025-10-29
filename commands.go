@@ -287,7 +287,7 @@ Examples:
 
 			// Default output directory
 			if outputDir == "" {
-				outputDir = "dist"
+				outputDir = distDir
 			}
 
 			fmt.Printf("Building %d binaries for targets: %v\n", len(cfg.toolchain), buildTargets)
@@ -332,7 +332,7 @@ Examples:
 	}
 
 	cmd.Flags().StringSliceVar(&targets, "targets", []string{"native", "wasm", "wasi"}, "Comma-separated build targets (native,wasm,wasi)")
-	cmd.Flags().StringVarP(&outputDir, "output", "o", "dist", "Output directory for built binaries")
+	cmd.Flags().StringVarP(&outputDir, "output", "o", distDir, "Output directory for built binaries")
 	cmd.Flags().BoolVar(&skipSync, "no-sync", false, "Skip repository sync before building")
 
 	return cmd
@@ -363,7 +363,7 @@ Examples:
 			if !skipBuild {
 				fmt.Println("Building all binaries...")
 				buildTargets := []buildTarget{targetNative, targetWASM, targetWASI}
-				results, err := cfg.buildAll(ctx, buildTargets, "dist")
+				results, err := cfg.buildAll(ctx, buildTargets, cfg.distDir)
 				if err != nil {
 					return fmt.Errorf("build failed: %w", err)
 				}
