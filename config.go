@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // =============================================================================
@@ -509,17 +510,29 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 		return fmt.Errorf("failed to list releases: %w", err)
 	}
 
-	// Parse release tag from output (format: "TAG\tTITLE\tTYPE\tDATE")
+	// Parse release tag from output (format: "TITLE\tTYPE\tTAG\tDATE" - tab separated)
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 {
 		return fmt.Errorf("no releases found")
 	}
-	fields := strings.Fields(lines[0])
-	if len(fields) == 0 {
+	// Split by tab to get fields
+	fields := strings.Split(lines[0], "\t")
+	if len(fields) < 3 {
 		return fmt.Errorf("failed to parse release info")
 	}
-	releaseTag := fields[0]
+	releaseTag := strings.TrimSpace(fields[2]) // TAG is the 3rd field
 	fmt.Printf("Latest release: %s\n", releaseTag)
+
+	// Get release published time
+	viewCmd := exec.CommandContext(ctx, "gh", "release", "view", releaseTag, "--json", "publishedAt", "-q", ".publishedAt")
+	timeOutput, err := viewCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get release time: %w", err)
+	}
+	releaseTime, err := time.Parse(time.RFC3339, strings.TrimSpace(string(timeOutput)))
+	if err != nil {
+		return fmt.Errorf("failed to parse release time: %w", err)
+	}
 
 	// Create dist directory if it doesn't exist
 	if err := os.MkdirAll(distDir, 0755); err != nil {
@@ -528,18 +541,26 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 
 	// Download native binaries for current platform
 	downloaded := 0
+	skipped := 0
 	for _, spec := range cfg.toolchain {
 		filename := cfg.buildFilename(spec.name, targetNative)
 		destPath := filepath.Join(distDir, filename)
 
-		// Skip if already exists
-		if _, err := os.Stat(destPath); err == nil {
-			fmt.Printf("✓ %s already exists\n", filename)
-			continue
+		// Check if local binary exists and compare timestamps
+		fileInfo, err := os.Stat(destPath)
+		if err == nil {
+			// File exists - check if it's newer than the release
+			localModTime := fileInfo.ModTime()
+			if localModTime.After(releaseTime) {
+				fmt.Printf("✓ %s is up to date (local is newer)\n", filename)
+				skipped++
+				continue
+			}
+			fmt.Printf("⟳ %s needs update (release is newer)\n", filename)
 		}
 
 		fmt.Printf("Downloading %s...\n", filename)
-		downloadCmd := exec.CommandContext(ctx, "gh", "release", "download", releaseTag, "-p", filename, "-D", distDir)
+		downloadCmd := exec.CommandContext(ctx, "gh", "release", "download", releaseTag, "-p", filename, "-D", distDir, "--clobber")
 		downloadCmd.Stdout = os.Stdout
 		downloadCmd.Stderr = os.Stderr
 		if err := downloadCmd.Run(); err != nil {
@@ -556,10 +577,10 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 		fmt.Printf("✓ Downloaded %s\n", filename)
 	}
 
-	if downloaded == 0 {
-		fmt.Println("No new binaries downloaded (all already present)")
-	} else {
-		fmt.Printf("✓ Downloaded %d binaries\n", downloaded)
+	if downloaded == 0 && skipped > 0 {
+		fmt.Println("All binaries are up to date")
+	} else if downloaded > 0 {
+		fmt.Printf("✓ Downloaded %d binaries (%d up to date)\n", downloaded, skipped)
 	}
 
 	return nil
