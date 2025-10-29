@@ -1,0 +1,70 @@
+.PHONY: all build ensure examples run view clean test help
+
+# Variables
+GO_RUN := go run .
+NO_SYNC := --no-sync
+DECKFONTS_PATH := $$(pwd)/.data/deckfonts
+
+# Default target
+all: build
+
+# Build all binaries (native, wasm, wasi)
+build:
+	$(GO_RUN) dev-build $(NO_SYNC)
+
+# Build and create GitHub release
+release:
+	$(GO_RUN) dev-release
+
+# Ensure binaries and repositories are up to date
+ensure:
+	$(GO_RUN) ensure $(NO_SYNC)
+
+# List all available examples
+examples:
+	$(GO_RUN) examples
+
+# Run a specific example (requires EXAMPLE variable)
+# Usage: make run EXAMPLE=deckviz/aapl
+run:
+	@if [ -z "$(EXAMPLE)" ]; then \
+		echo "Error: EXAMPLE variable is required"; \
+		echo "Usage: make run EXAMPLE=deckviz/aapl"; \
+		exit 1; \
+	fi
+	export DECKFONTS=$(DECKFONTS_PATH) && $(GO_RUN) run $(EXAMPLE) $(NO_SYNC)
+
+# View a specific example (requires EXAMPLE variable)
+# Usage: make view EXAMPLE=deckviz/aapl
+view:
+	@if [ -z "$(EXAMPLE)" ]; then \
+		echo "Error: EXAMPLE variable is required"; \
+		echo "Usage: make view EXAMPLE=deckviz/aapl"; \
+		exit 1; \
+	fi
+	export DECKFONTS=$(DECKFONTS_PATH) && $(GO_RUN) view $(EXAMPLE) $(NO_SYNC)
+
+# Clean build artifacts
+clean:
+	rm -rf dist/ .dist/ bin/ .src/ .data/
+
+# Test all commands in the correct order (from CLAUDE.md)
+test: build ensure examples
+	@echo "✓ All core commands tested successfully"
+	@echo ""
+	@echo "To test run/view commands:"
+	@echo "  make run EXAMPLE=deckviz/aapl"
+	@echo "  make view EXAMPLE=deckviz/aapl"
+
+# Show help
+help:
+	@echo "Available targets:"
+	@echo "  make build         - Build all binaries (native, wasm, wasi)"
+	@echo "  make release       - Build and create GitHub release"
+	@echo "  make ensure        - Ensure binaries and repos are up to date"
+	@echo "  make examples      - List all available examples"
+	@echo "  make run           - Run an example (requires EXAMPLE=deckviz/aapl)"
+	@echo "  make view          - View an example (requires EXAMPLE=deckviz/aapl)"
+	@echo "  make test          - Test all commands in correct order"
+	@echo "  make clean         - Clean build artifacts"
+	@echo "  make help          - Show this help message"
