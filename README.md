@@ -7,7 +7,8 @@ Test harness for deck examples with WASM/WASI support.
 
 ## What It Does
 
-- Downloads deck example data (deckviz, dubois, deckfonts)
+- Downloads deck example data (deckviz, dubois)
+- Downloads deck fonts
 - Clones & builds deck Go repos (decksh, pdfdeck, gift, etc.)
 - Compiles to native, WASM, and WASI targets
 - Runs examples and opens results
