@@ -98,7 +98,7 @@ func (t buildTarget) extension() string {
 }
 
 // =============================================================================
-// Config Loading
+// Config Loading and Initialization
 // =============================================================================
 
 func loadConfig() (*config, error) {
@@ -108,7 +108,7 @@ func loadConfig() (*config, error) {
 		repos:  make(map[string]*repoConfig),
 	}
 
-	// Initialize repositories
+	// Initialize repositories and toolchain
 	cfg.initDataRepos()
 	cfg.initCodeRepos()
 	cfg.initToolchain()
@@ -163,10 +163,6 @@ func (cfg *config) initToolchain() {
 	}
 }
 
-// =============================================================================
-// Helper Functions for Repo Creation
-// =============================================================================
-
 func (cfg *config) addDataRepo(name, dir, branch string) *repoConfig {
 	repo := &repoConfig{
 		name:   name,
@@ -192,10 +188,6 @@ func (cfg *config) addCodeRepo(name, branch string) *repoConfig {
 	cfg.repos[name] = repo
 	return repo
 }
-
-// =============================================================================
-// Config Finalization
-// =============================================================================
 
 func (cfg *config) finalize() error {
 	// Resolve all repo directories to absolute paths
@@ -227,13 +219,17 @@ func (cfg *config) finalize() error {
 }
 
 // =============================================================================
-// Binary Installation (legacy go install method)
+// Path Helpers (all file paths calculated here)
 // =============================================================================
 
-// Update ensureBins to try GitHub releases first
-func (cfg *config) ensureBins(ctx context.Context) error {
-	// Download from GitHub releases only
-	return cfg.downloadReleaseBinaries(ctx)
+// getBinaryPath returns the path to a platform-specific binary in the dist directory
+func (cfg *config) getBinaryPath(name string) string {
+	return filepath.Join(cfg.distDir, name+"-"+runtime.GOOS+"-"+runtime.GOARCH)
+}
+
+// getDistGlob returns the glob pattern for all files in dist directory (for gh release)
+func (cfg *config) getDistGlob() string {
+	return filepath.Join(filepath.Base(cfg.distDir), "*")
 }
 
 // =============================================================================
@@ -368,138 +364,13 @@ func (cfg *config) ensureWorkspace(ctx context.Context) error {
 }
 
 // =============================================================================
-// Build Functions
+// Binary Management
 // =============================================================================
 
-func (cfg *config) buildBinary(ctx context.Context, spec binSpec, target buildTarget, outputDir string) buildResult {
-	result := buildResult{
-		binary: spec.name,
-		target: target,
-	}
-
-	// Check target support
-	if target == targetWASM && !spec.wasmSupport {
-		result.err = fmt.Errorf("WASM not supported (requires %v)", getRequirement(spec))
-		return result
-	}
-	if target == targetWASI && !spec.wasiSupport {
-		result.err = fmt.Errorf("WASI not supported (requires %v)", getRequirement(spec))
-		return result
-	}
-
-	// Build filename with descriptive suffix (flat structure for GitHub releases)
-	filename := cfg.buildFilename(spec.name, target)
-	outPath := filepath.Join(outputDir, filename)
-	result.path = outPath
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		result.err = fmt.Errorf("mkdir: %w", err)
-		return result
-	}
-
-	// Make output path absolute (needed because we run from srcDir)
-	absOutPath, err := filepath.Abs(outPath)
-	if err != nil {
-		result.err = fmt.Errorf("abs path: %w", err)
-		return result
-	}
-
-	// Build from srcDir using go.work
-	fmt.Printf("Building %s for %s...\n", spec.name, target)
-
-	cmd := exec.CommandContext(ctx, cfg.goCmd, "build", "-o", absOutPath, spec.pkg)
-	cmd.Dir = srcDir // Run from workspace directory
-
-	// Set cross-compilation environment
-	goos, goarch := target.buildEnv()
-	env := os.Environ()
-	if goos != "" {
-		env = append(env, "GOOS="+goos)
-	}
-	if goarch != "" {
-		env = append(env, "GOARCH="+goarch)
-	}
-	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		result.err = fmt.Errorf("build failed: %w", err)
-		return result
-	}
-
-	fmt.Printf("✓ Built %s\n", filename)
-	return result
+func (cfg *config) ensureBins(ctx context.Context) error {
+	// Download from GitHub releases only
+	return cfg.downloadReleaseBinaries(ctx)
 }
-
-// buildFilename creates a descriptive filename for GitHub releases (flat structure)
-func (cfg *config) buildFilename(name string, target buildTarget) string {
-	switch target {
-	case targetWASM:
-		return fmt.Sprintf("%s-wasm.wasm", name)
-	case targetWASI:
-		return fmt.Sprintf("%s-wasi.wasm", name)
-	default: // native
-		goos := runtime.GOOS
-		goarch := runtime.GOARCH
-		ext := ""
-		if goos == "windows" {
-			ext = ".exe"
-		}
-		return fmt.Sprintf("%s-%s-%s%s", name, goos, goarch, ext)
-	}
-}
-
-func (cfg *config) buildAll(ctx context.Context, targets []buildTarget, outputDir string) ([]buildResult, error) {
-	var results []buildResult
-	for _, spec := range cfg.toolchain {
-		for _, target := range targets {
-			result := cfg.buildBinary(ctx, spec, target, outputDir)
-			results = append(results, result)
-		}
-	}
-	return results, nil
-}
-
-func getRequirement(spec binSpec) string {
-	if spec.requiresUI {
-		return "UI/graphics"
-	}
-	return "platform support"
-}
-
-// =============================================================================
-// Utility Functions
-// =============================================================================
-
-func copyFile(src, dst string) error {
-	source, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-
-	destination, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destination.Close()
-
-	if _, err = io.Copy(destination, source); err != nil {
-		return err
-	}
-
-	// Preserve executable permissions
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	return os.Chmod(dst, info.Mode())
-}
-
-// =============================================================================
-// GitHub Release Download
-// =============================================================================
 
 func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 	// Check if gh CLI is installed
@@ -591,7 +462,131 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 	return nil
 }
 
-// getBinaryPath returns the path to a platform-specific binary in the dist directory
-func (cfg *config) getBinaryPath(name string) string {
-	return filepath.Join(cfg.distDir, name+"-"+runtime.GOOS+"-"+runtime.GOARCH)
+// =============================================================================
+// Build Functions
+// =============================================================================
+
+func (cfg *config) buildBinary(ctx context.Context, spec binSpec, target buildTarget, outputDir string) buildResult {
+	result := buildResult{
+		binary: spec.name,
+		target: target,
+	}
+
+	// Check target support
+	if target == targetWASM && !spec.wasmSupport {
+		result.err = fmt.Errorf("WASM not supported (requires %v)", getRequirement(spec))
+		return result
+	}
+	if target == targetWASI && !spec.wasiSupport {
+		result.err = fmt.Errorf("WASI not supported (requires %v)", getRequirement(spec))
+		return result
+	}
+
+	// Build filename with descriptive suffix (flat structure for GitHub releases)
+	filename := cfg.buildFilename(spec.name, target)
+	outPath := filepath.Join(outputDir, filename)
+	result.path = outPath
+
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		result.err = fmt.Errorf("mkdir: %w", err)
+		return result
+	}
+
+	// Make output path absolute (needed because we run from srcDir)
+	absOutPath, err := filepath.Abs(outPath)
+	if err != nil {
+		result.err = fmt.Errorf("abs path: %w", err)
+		return result
+	}
+
+	// Build from srcDir using go.work
+	fmt.Printf("Building %s for %s...\n", spec.name, target)
+
+	cmd := exec.CommandContext(ctx, cfg.goCmd, "build", "-o", absOutPath, spec.pkg)
+	cmd.Dir = srcDir // Run from workspace directory
+
+	// Set cross-compilation environment
+	goos, goarch := target.buildEnv()
+	env := os.Environ()
+	if goos != "" {
+		env = append(env, "GOOS="+goos)
+	}
+	if goarch != "" {
+		env = append(env, "GOARCH="+goarch)
+	}
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		result.err = fmt.Errorf("build failed: %w", err)
+		return result
+	}
+
+	fmt.Printf("✓ Built %s\n", filename)
+	return result
+}
+
+func (cfg *config) buildFilename(name string, target buildTarget) string {
+	switch target {
+	case targetWASM:
+		return fmt.Sprintf("%s-wasm.wasm", name)
+	case targetWASI:
+		return fmt.Sprintf("%s-wasi.wasm", name)
+	default: // native
+		goos := runtime.GOOS
+		goarch := runtime.GOARCH
+		ext := ""
+		if goos == "windows" {
+			ext = ".exe"
+		}
+		return fmt.Sprintf("%s-%s-%s%s", name, goos, goarch, ext)
+	}
+}
+
+func (cfg *config) buildAll(ctx context.Context, targets []buildTarget, outputDir string) ([]buildResult, error) {
+	var results []buildResult
+	for _, spec := range cfg.toolchain {
+		for _, target := range targets {
+			result := cfg.buildBinary(ctx, spec, target, outputDir)
+			results = append(results, result)
+		}
+	}
+	return results, nil
+}
+
+func getRequirement(spec binSpec) string {
+	if spec.requiresUI {
+		return "UI/graphics"
+	}
+	return "platform support"
+}
+
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
+func copyFile(src, dst string) error {
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	if _, err = io.Copy(destination, source); err != nil {
+		return err
+	}
+
+	// Preserve executable permissions
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(dst, info.Mode())
 }
