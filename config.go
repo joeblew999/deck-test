@@ -20,7 +20,7 @@ import (
 const (
 	dataDir = ".data"
 	srcDir  = ".src"
-	distDir = ".dist"
+	distDir = "dist"
 )
 
 // =============================================================================

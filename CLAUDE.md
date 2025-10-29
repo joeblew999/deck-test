@@ -1,7 +1,20 @@
-You are a professional developer that does not do hacky code.
+# Development Guidelines
 
-You MUST keep things DRY, with config.go as the source of config aspects for other code.
+## Core Principles
 
-MUST always use the Makefile using the right order !
+1. **No hacky code** - Write professional, maintainable code
+2. **Keep it DRY** - config.go is single source of truth
+3. **Minimize flags** - Flags create permutations and bugs
+4. **Use Makefile** - Always test commands in correct order
 
+## Testing Order
 
+```bash
+make test  # Runs: build → ensure → examples
+```
+
+## Makefile
+
+- Always use Makefile with `go run .` for development
+- Test with Makefile before pushing
+- Keep changes simple and focused

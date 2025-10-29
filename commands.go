@@ -233,24 +233,16 @@ func newSetupCommand(cfg *config) *cobra.Command {
 }
 
 func newDevBuildCommand(cfg *config) *cobra.Command {
-	var targets []string
-	var outputDir string
 	var skipSync bool
 
 	cmd := &cobra.Command{
 		Use:   "dev-build",
-		Short: "Build deck binaries for native, WASM, and/or WASI targets",
-		Long: `Build all deck binaries for specified targets.
-
-Targets:
-  native - Native binaries for current platform
-  wasm   - WebAssembly (GOOS=js GOARCH=wasm)
-  wasi   - WASI (GOOS=wasip1 GOARCH=wasm)
+		Short: "Build all deck binaries for native, WASM, and WASI targets",
+		Long: `Build all deck binaries for all targets (native, wasm, wasi).
 
 Examples:
-  decktool dev-build --targets=native,wasm,wasi
-  decktool dev-build --targets=wasm --output=dist/wasm
-  decktool dev-build --targets=wasi --no-sync`,
+  decktool dev-build
+  decktool dev-build --no-sync`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
@@ -266,32 +258,11 @@ Examples:
 				}
 			}
 
-			// Parse target list
-			var buildTargets []buildTarget
-			if len(targets) == 0 {
-				buildTargets = []buildTarget{targetNative, targetWASM, targetWASI}
-			} else {
-				for _, t := range targets {
-					switch strings.ToLower(t) {
-					case "native":
-						buildTargets = append(buildTargets, targetNative)
-					case "wasm":
-						buildTargets = append(buildTargets, targetWASM)
-					case "wasi":
-						buildTargets = append(buildTargets, targetWASI)
-					default:
-						return fmt.Errorf("unknown target: %s (valid: native, wasm, wasi)", t)
-					}
-				}
-			}
-
-			// Default output directory
-			if outputDir == "" {
-				outputDir = cfg.distDir
-			}
+			// Build all targets to dist directory
+			buildTargets := []buildTarget{targetNative, targetWASM, targetWASI}
 
 			fmt.Printf("Building %d binaries for targets: %v\n", len(cfg.toolchain), buildTargets)
-			results, err := cfg.buildAll(ctx, buildTargets, outputDir)
+			results, err := cfg.buildAll(ctx, buildTargets, cfg.distDir)
 			if err != nil {
 				return err
 			}
@@ -331,8 +302,6 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringSliceVar(&targets, "targets", []string{"native", "wasm", "wasi"}, "Comma-separated build targets (native,wasm,wasi)")
-	cmd.Flags().StringVarP(&outputDir, "output", "o", "", fmt.Sprintf("Output directory for built binaries (default: %s)", cfg.distDir))
 	cmd.Flags().BoolVar(&skipSync, "no-sync", false, "Skip repository sync before building")
 
 	return cmd
