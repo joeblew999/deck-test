@@ -135,11 +135,21 @@ func newViewCommand(cfg *config) *cobra.Command {
 			if !ok {
 				return fmt.Errorf("rendered XML not found for %q", args[0])
 			}
+
+			// Get example directory to run ebdeck from there (for relative paths in XML)
+			source, name := parseExample(args[0])
+			exampleDir, err := cfg.getExampleDir(source, name)
+			if err != nil {
+				return err
+			}
+
 			ebdeckPath, err := cfg.resolveBinary("ebdeck")
 			if err != nil {
 				return err
 			}
 			viewCmd := exec.CommandContext(cmd.Context(), ebdeckPath, xmlPath)
+			viewCmd.Dir = exampleDir
+			viewCmd.Env = append(os.Environ(), "DECKFONTS="+cfg.deckfontsEnv)
 			viewCmd.Stdout = os.Stdout
 			viewCmd.Stderr = os.Stderr
 			return viewCmd.Run()
