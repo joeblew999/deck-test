@@ -139,10 +139,33 @@ func (cfg *config) ensureBins(ctx context.Context) error {
 	return cfg.downloadReleaseBinaries(ctx)
 }
 
+func (cfg *config) ensureGhCli(ctx context.Context) error {
+	// Check if gh CLI is already installed
+	if _, err := exec.LookPath("gh"); err == nil {
+		return nil // Already installed
+	}
+
+	// Install gh CLI via go install
+	fmt.Println("gh CLI not found, installing via go install...")
+	installCmd := exec.CommandContext(ctx, cfg.goCmd, "install", "github.com/cli/cli/v2/cmd/gh@latest")
+	installCmd.Env = append(os.Environ(), "GOBIN="+cfg.goBinDir)
+	installCmd.Stdout = os.Stdout
+	installCmd.Stderr = os.Stderr
+	if err := installCmd.Run(); err != nil {
+		return fmt.Errorf("failed to install gh CLI: %w", err)
+	}
+	fmt.Println("✓ gh CLI installed successfully")
+
+	// Update PATH to include GOBIN
+	os.Setenv("PATH", cfg.goBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	return nil
+}
+
 func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
-	// Check if gh CLI is installed
-	if _, err := exec.LookPath("gh"); err != nil {
-		return fmt.Errorf("gh CLI not found. Install it with: brew install gh")
+	// Ensure gh CLI is installed
+	if err := cfg.ensureGhCli(ctx); err != nil {
+		return err
 	}
 
 	// Get latest release info

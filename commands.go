@@ -348,20 +348,9 @@ Examples:
 				prerelease = true
 			}
 
-			// Check if gh CLI is installed, install if needed
-			if _, err := exec.LookPath("gh"); err != nil {
-				fmt.Println("gh CLI not found, installing via go install...")
-				installCmd := exec.CommandContext(ctx, cfg.goCmd, "install", "github.com/cli/cli/v2/cmd/gh@latest")
-				installCmd.Env = append(os.Environ(), "GOBIN="+cfg.goBinDir)
-				installCmd.Stdout = os.Stdout
-				installCmd.Stderr = os.Stderr
-				if err := installCmd.Run(); err != nil {
-					return fmt.Errorf("failed to install gh CLI: %w", err)
-				}
-				fmt.Println("✓ gh CLI installed successfully")
-
-				// Update PATH to include GOBIN
-				os.Setenv("PATH", cfg.goBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			// Ensure gh CLI is installed
+			if err := cfg.ensureGhCli(ctx); err != nil {
+				return err
 			}
 
 			// Check authentication
