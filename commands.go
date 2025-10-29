@@ -25,7 +25,6 @@ func newRootCommand(cfg *config) *cobra.Command {
 
 	// Note: Repo-specific flags removed for simplicity
 	// Use environment variables instead (DECKVIZ_DIR, DECKFONTS_DIR, etc.)
-	root.PersistentFlags().BoolVar(&cfg.skipEnsure, "no-sync", false, "skip syncing binaries and repositories before operations")
 
 	root.AddCommand(newEnsureCommand(cfg))
 	root.AddCommand(newExamplesCommand(cfg))
@@ -35,6 +34,7 @@ func newRootCommand(cfg *config) *cobra.Command {
 	root.AddCommand(newSetupCommand(cfg))
 	root.AddCommand(newDevBuildCommand(cfg))
 	root.AddCommand(newDevReleaseCommand(cfg))
+	root.AddCommand(newDevCleanCommand(cfg))
 
 	return root
 }
@@ -62,10 +62,8 @@ func newExamplesCommand(cfg *config) *cobra.Command {
 		Use:   "examples",
 		Short: "List available examples",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !cfg.skipEnsure {
-				if err := cfg.ensureRepos(cmd.Context()); err != nil {
-					return err
-				}
+			if err := cfg.ensureRepos(cmd.Context()); err != nil {
+				return err
 			}
 			examples, err := cfg.listExamples()
 			if err != nil {
@@ -87,13 +85,11 @@ func newRunCommand(cfg *config) *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: cfg.exampleCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !cfg.skipEnsure {
-				if err := cfg.ensureBins(cmd.Context()); err != nil {
-					return err
-				}
-				if err := cfg.ensureRepos(cmd.Context()); err != nil {
-					return err
-				}
+			if err := cfg.ensureBins(cmd.Context()); err != nil {
+				return err
+			}
+			if err := cfg.ensureRepos(cmd.Context()); err != nil {
+				return err
 			}
 			results, err := cfg.runExamples(cmd.Context(), args)
 			if err != nil {
@@ -119,13 +115,11 @@ func newViewCommand(cfg *config) *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: cfg.exampleCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !cfg.skipEnsure {
-				if err := cfg.ensureBins(cmd.Context()); err != nil {
-					return err
-				}
-				if err := cfg.ensureRepos(cmd.Context()); err != nil {
-					return err
-				}
+			if err := cfg.ensureBins(cmd.Context()); err != nil {
+				return err
+			}
+			if err := cfg.ensureRepos(cmd.Context()); err != nil {
+				return err
 			}
 			results, err := cfg.runExamples(cmd.Context(), args)
 			if err != nil {
@@ -199,11 +193,7 @@ func newSetupCommand(cfg *config) *cobra.Command {
 				install = false
 			}
 
-			performEnsure := sync && !cfg.skipEnsure
-			if sync && cfg.skipEnsure {
-				fmt.Fprintln(os.Stderr, "Skipping sync because --no-sync was provided")
-			}
-			if performEnsure {
+			if sync {
 				if err := cfg.ensureBins(ctx); err != nil {
 					return err
 				}
@@ -242,29 +232,24 @@ func newSetupCommand(cfg *config) *cobra.Command {
 }
 
 func newDevBuildCommand(cfg *config) *cobra.Command {
-	var skipSync bool
-
 	cmd := &cobra.Command{
 		Use:   "dev-build",
 		Short: "Build all deck binaries for native, WASM, and WASI targets",
 		Long: `Build all deck binaries for all targets (native, wasm, wasi).
 
 Examples:
-  decktool dev-build
-  decktool dev-build --no-sync`,
+  decktool dev-build`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			// Ensure repos are synced unless skipped
-			if !skipSync && !cfg.skipEnsure {
-				fmt.Println("Syncing build repositories...")
-				if err := cfg.ensureBuildRepos(ctx); err != nil {
-					return fmt.Errorf("sync build repos: %w", err)
-				}
-				fmt.Println("Creating go.work workspace...")
-				if err := cfg.ensureWorkspace(ctx); err != nil {
-					return fmt.Errorf("create workspace: %w", err)
-				}
+			// Ensure repos are synced
+			fmt.Println("Syncing build repositories...")
+			if err := cfg.ensureBuildRepos(ctx); err != nil {
+				return fmt.Errorf("sync build repos: %w", err)
+			}
+			fmt.Println("Creating go.work workspace...")
+			if err := cfg.ensureWorkspace(ctx); err != nil {
+				return fmt.Errorf("create workspace: %w", err)
 			}
 
 			// Build all targets to dist directory
@@ -310,8 +295,6 @@ Examples:
 			return nil
 		},
 	}
-
-	cmd.Flags().BoolVar(&skipSync, "no-sync", false, "Skip repository sync before building")
 
 	return cmd
 }
@@ -457,4 +440,35 @@ For WASM binaries, use with a WebAssembly runtime like wasmtime or wasmer.
 	cmd.Flags().StringVar(&version, "version", "", "Version tag (default: auto-generated timestamp)")
 
 	return cmd
+}
+
+func newDevCleanCommand(cfg *config) *cobra.Command {
+	return &cobra.Command{
+		Use:   "dev-clean",
+		Short: "Remove all dot folders (.data, .src, .dist, .fonts) for fresh start",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Get all directories from config
+			dirsToRemove := []string{
+				dataDir,
+				srcDir,
+				distDir,
+				fontsDir,
+			}
+
+			for _, dir := range dirsToRemove {
+				if _, err := os.Stat(dir); err == nil {
+					fmt.Printf("Removing %s...\n", dir)
+					if err := os.RemoveAll(dir); err != nil {
+						return fmt.Errorf("failed to remove %s: %w", dir, err)
+					}
+					fmt.Printf("✓ Removed %s\n", dir)
+				} else {
+					fmt.Printf("  Skipping %s (doesn't exist)\n", dir)
+				}
+			}
+
+			fmt.Println("\n✓ Dev clean complete - all dot folders removed")
+			return nil
+		},
+	}
 }

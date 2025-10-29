@@ -1,8 +1,7 @@
-.PHONY: all build ensure examples run view clean test help
+.PHONY: all build ensure examples run view clean dev-clean test help
 
 # Variables
 GO_RUN := go run .
-NO_SYNC := --no-sync
 
 TEST_EXAMPLE := deckviz/fire
 TEST_EXAMPLE_PATH := .data/deckviz/fire
@@ -10,9 +9,10 @@ TEST_EXAMPLE_PATH := .data/deckviz/fire
 # Default target
 all: dev-build
 
+
 # Build all binaries (native, wasm, wasi)
 dev-build:
-	$(GO_RUN) dev-build $(NO_SYNC)
+	$(GO_RUN) dev-build
 
 # Build and create GitHub release
 dev-release:
@@ -22,9 +22,19 @@ dev-release:
 dev-release-fast:
 	$(GO_RUN) dev-release --skip-build
 
+# Clean all dot folders (data, src, dist, fonts) for fresh start
+# WARNING: This removes ALL repos and takes a long time to re-clone
+dev-clean:
+	@echo "WARNING: This will remove .data, .src, .dist, and .fonts folders"
+	@echo "It takes a long time to re-clone all repositories!"
+	@read -p "Are you sure? (yes/no): " answer && [ "$$answer" = "yes" ]
+	$(GO_RUN) dev-clean
+
+
+
 # Ensure binaries and repositories are up to date
 ensure:
-	$(GO_RUN) ensure $(NO_SYNC)
+	$(GO_RUN) ensure
 
 # List all available examples
 examples:
@@ -38,11 +48,11 @@ run:
 		echo "Usage: make run EXAMPLE=deckviz/aapl"; \
 		exit 1; \
 	fi
-	$(GO_RUN) run $(EXAMPLE) $(NO_SYNC)
+	$(GO_RUN) run $(EXAMPLE)
 run-test:
-	$(GO_RUN) run $(TEST_EXAMPLE) $(NO_SYNC)
+	$(GO_RUN) run $(TEST_EXAMPLE)
 run-test-path:
-	$(GO_RUN) run $(TEST_EXAMPLE_PATH) $(NO_SYNC)
+	$(GO_RUN) run $(TEST_EXAMPLE_PATH)
 
 # View a specific example (requires EXAMPLE variable)
 # Usage: make view EXAMPLE=deckviz/aapl
@@ -52,16 +62,15 @@ view:
 		echo "Usage: make view EXAMPLE=deckviz/aapl"; \
 		exit 1; \
 	fi
-	$(GO_RUN) view $(EXAMPLE) $(NO_SYNC)
+	$(GO_RUN) view $(EXAMPLE)
 view-test:
-	$(GO_RUN) view $(TEST_EXAMPLE) $(NO_SYNC)
+	$(GO_RUN) view $(TEST_EXAMPLE)
 view-test-path:
-	$(GO_RUN) view $(TEST_EXAMPLE_PATH) $(NO_SYNC)
+	$(GO_RUN) view $(TEST_EXAMPLE_PATH)
 
 
-# Clean build artifacts
-clean:
-	rm -rf dist/ .dist/ bin/ .src/ .data/
+
+
 
 # Test all commands in the correct order (from CLAUDE.md)
 test: build ensure examples

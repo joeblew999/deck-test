@@ -31,11 +31,17 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# Shit Claude makes !
+bin/
+deck-test
+
 # Build artifacts and repositories
 .data/
 .src/
 .dist/
-bin/
-dist/
+
+.dist/
 
 .fonts
+
+
