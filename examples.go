@@ -56,14 +56,14 @@ func (cfg *config) runExamples(ctx context.Context, examples []string) (map[stri
 
 	results := make(map[string]string)
 	for _, raw := range examples {
-		source, name := parseExample(raw)
+		source, name := cfg.parseExample(raw)
 		dir, err := cfg.getExampleDir(source, name)
 		if err != nil {
 			return nil, err
 		}
 		dshPath := cfg.getExampleDshPath(dir, name)
 		if _, err := os.Stat(dshPath); err != nil {
-			fmt.Printf("Skipping %s: %v\n", normalizeExampleName(raw), err)
+			fmt.Printf("Skipping %s: %v\n", cfg.normalizeExampleName(raw), err)
 			continue
 		}
 
@@ -75,7 +75,7 @@ func (cfg *config) runExamples(ctx context.Context, examples []string) (map[stri
 		if err := cfg.renderDeck(ctx, dir, name+".dsh", xmlPath); err != nil {
 			return nil, err
 		}
-		results[normalizeExampleName(raw)] = xmlPath
+		results[cfg.normalizeExampleName(raw)] = xmlPath
 	}
 
 	if len(results) == 0 {

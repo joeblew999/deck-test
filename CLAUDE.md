@@ -20,3 +20,10 @@ make test  # Runs: build → ensure → examples
 - Always use Makefile with `go run .` for development
 - Test with Makefile before pushing
 - Keep changes simple and focused
+- MUST keep it aligned with the CLI commands. 
+
+## README
+
+- Always use  `go run .` for examples.
+- Keep changes simple and focused
+- MUST keep the Makefile and README aligned.

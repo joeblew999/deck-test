@@ -4,6 +4,9 @@
 GO_RUN := go run .
 NO_SYNC := --no-sync
 
+TEST_EXAMPLE := deckviz/fire
+TEST_EXAMPLE_PATH := .data/deckviz/fire
+
 # Default target
 all: build
 
@@ -36,6 +39,10 @@ run:
 		exit 1; \
 	fi
 	$(GO_RUN) run $(EXAMPLE) $(NO_SYNC)
+run-test:
+	$(GO_RUN) run $(TEST_EXAMPLE) $(NO_SYNC)
+run-test-path:
+	$(GO_RUN) run $(TEST_EXAMPLE_PATH) $(NO_SYNC)
 
 # View a specific example (requires EXAMPLE variable)
 # Usage: make view EXAMPLE=deckviz/aapl
@@ -46,6 +53,11 @@ view:
 		exit 1; \
 	fi
 	$(GO_RUN) view $(EXAMPLE) $(NO_SYNC)
+view-test:
+	$(GO_RUN) view $(TEST_EXAMPLE) $(NO_SYNC)
+view-test-path:
+	$(GO_RUN) view $(TEST_EXAMPLE_PATH) $(NO_SYNC)
+
 
 # Clean build artifacts
 clean:

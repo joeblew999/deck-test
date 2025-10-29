@@ -295,6 +295,17 @@ func getShellRCPath(home, shell string) string {
 // 1. dist directory (our built/downloaded binaries)
 // 2. PATH (system-installed binaries)
 // 3. GOBIN directory (go-installed binaries)
+// getRepoNameByDir returns the repo name for a given directory basename
+// Maps: "dubois-data-portraits" -> "dubois", "deckviz" -> "deckviz"
+func (cfg *config) getRepoNameByDir(dirName string) string {
+	for name, repo := range cfg.repos {
+		if filepath.Base(repo.dir) == dirName {
+			return name
+		}
+	}
+	return ""
+}
+
 func (cfg *config) resolveBinary(name string) (string, error) {
 	// Check dist/ directory first (our downloaded binaries)
 	distPath := cfg.getBinaryPath(name)
@@ -712,24 +723,42 @@ func expandPath(path string) (string, error) {
 	return absPath(path)
 }
 
-func parseExample(raw string) (source, name string) {
+func (cfg *config) parseExample(raw string) (source, name string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "deckviz", ""
 	}
+	
+	// Handle filesystem paths like ".data/dubois-data-portraits/plate01"
+	// Strip .data/ prefix if present
+	if strings.HasPrefix(raw, dataDir+"/") {
+		raw = strings.TrimPrefix(raw, dataDir+"/")
+	}
+	
 	if strings.Contains(raw, "/") {
 		parts := strings.SplitN(raw, "/", 2)
 		src := parts[0]
+		exampleName := strings.TrimSpace(parts[1])
+		
+		// Check if src is a directory name (e.g., "dubois-data-portraits")
+		// and map it to logical repo name (e.g., "dubois")
+		if repoName := cfg.getRepoNameByDir(src); repoName != "" {
+			return repoName, exampleName
+		}
+		
+		// Otherwise use as-is (already a logical name like "deckviz" or "dubois")
 		if src == "" {
 			src = "deckviz"
 		}
-		return src, strings.TrimSpace(parts[1])
+		return src, exampleName
 	}
+	
+	// No slash, default to deckviz
 	return "deckviz", raw
 }
 
-func normalizeExampleName(raw string) string {
-	source, name := parseExample(raw)
+func (cfg *config) normalizeExampleName(raw string) string {
+	source, name := cfg.parseExample(raw)
 	if source == "deckviz" {
 		return "deckviz/" + name
 	}

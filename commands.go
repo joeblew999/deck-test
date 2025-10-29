@@ -131,13 +131,13 @@ func newViewCommand(cfg *config) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			xmlPath, ok := results[normalizeExampleName(args[0])]
+			xmlPath, ok := results[cfg.normalizeExampleName(args[0])]
 			if !ok {
 				return fmt.Errorf("rendered XML not found for %q", args[0])
 			}
 
 			// Get example directory to run ebdeck from there (for relative paths in XML)
-			source, name := parseExample(args[0])
+			source, name := cfg.parseExample(args[0])
 			exampleDir, err := cfg.getExampleDir(source, name)
 			if err != nil {
 				return err
