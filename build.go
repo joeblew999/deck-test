@@ -166,15 +166,24 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 	releaseTag := strings.TrimSpace(fields[2]) // TAG is the 3rd field
 	fmt.Printf("Latest release: %s\n", releaseTag)
 
-	// Get release published time
-	viewCmd := exec.CommandContext(ctx, "gh", "release", "view", releaseTag, "--json", "publishedAt", "-q", ".publishedAt")
+	// Get release published/created time (use createdAt since publishedAt may be null for drafts)
+	viewCmd := exec.CommandContext(ctx, "gh", "release", "view", releaseTag, "--json", "createdAt", "-q", ".createdAt")
 	timeOutput, err := viewCmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get release time: %w", err)
 	}
-	releaseTime, err := time.Parse(time.RFC3339, strings.TrimSpace(string(timeOutput)))
-	if err != nil {
-		return fmt.Errorf("failed to parse release time: %w", err)
+	timeStr := strings.TrimSpace(string(timeOutput))
+	if timeStr == "" || timeStr == "null" {
+		// If no timestamp available, skip timestamp check and download everything
+		fmt.Println("No release timestamp available, downloading all binaries...")
+	}
+
+	var releaseTime time.Time
+	if timeStr != "" && timeStr != "null" {
+		releaseTime, err = time.Parse(time.RFC3339, timeStr)
+		if err != nil {
+			return fmt.Errorf("failed to parse release time: %w", err)
+		}
 	}
 
 	// Create dist directory if it doesn't exist
@@ -189,10 +198,10 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 		filename := cfg.buildFilename(spec.name, targetNative)
 		destPath := filepath.Join(cfg.distDir, filename)
 
-		// Check if local binary exists and compare timestamps
+		// Check if local binary exists and compare timestamps (if available)
 		fileInfo, err := os.Stat(destPath)
-		if err == nil {
-			// File exists - check if it's newer than the release
+		if err == nil && !releaseTime.IsZero() {
+			// File exists and we have a release time - check if local is newer
 			localModTime := fileInfo.ModTime()
 			if localModTime.After(releaseTime) {
 				fmt.Printf("✓ %s is up to date (local is newer)\n", filename)
@@ -200,6 +209,11 @@ func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
 				continue
 			}
 			fmt.Printf("⟳ %s needs update (release is newer)\n", filename)
+		} else if err == nil {
+			// File exists but no release time - skip if file exists
+			fmt.Printf("✓ %s already exists (no timestamp to compare)\n", filename)
+			skipped++
+			continue
 		}
 
 		fmt.Printf("Downloading %s...\n", filename)
