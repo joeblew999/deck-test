@@ -16,6 +16,10 @@ build:
 release:
 	$(GO_RUN) dev-release
 
+# Create GitHub release (skip build if already built)
+release-fast:
+	$(GO_RUN) dev-release --skip-build
+
 # Ensure binaries and repositories are up to date
 ensure:
 	$(GO_RUN) ensure $(NO_SYNC)
@@ -56,15 +60,3 @@ test: build ensure examples
 	@echo "  make run EXAMPLE=deckviz/aapl"
 	@echo "  make view EXAMPLE=deckviz/aapl"
 
-# Show help
-help:
-	@echo "Available targets:"
-	@echo "  make build         - Build all binaries (native, wasm, wasi)"
-	@echo "  make release       - Build and create GitHub release"
-	@echo "  make ensure        - Ensure binaries and repos are up to date"
-	@echo "  make examples      - List all available examples"
-	@echo "  make run           - Run an example (requires EXAMPLE=deckviz/aapl)"
-	@echo "  make view          - View an example (requires EXAMPLE=deckviz/aapl)"
-	@echo "  make test          - Test all commands in correct order"
-	@echo "  make clean         - Clean build artifacts"
-	@echo "  make help          - Show this help message"
