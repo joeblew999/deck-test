@@ -7,6 +7,8 @@
 3. **Minimize flags** - Flags create permutations and bugs
 4. **Use Makefile** - Always test commands in correct order
 
+Config needs to calculate ALL file paths !! 
+
 ## Testing Order
 
 ```bash

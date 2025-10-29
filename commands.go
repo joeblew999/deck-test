@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -426,7 +427,7 @@ For WASM binaries, use with a WebAssembly runtime like wasmtime or wasmer.
 			if prerelease {
 				releaseArgs = append(releaseArgs, "--prerelease")
 			}
-			releaseArgs = append(releaseArgs, "dist/*")
+			releaseArgs = append(releaseArgs, filepath.Join(filepath.Base(cfg.distDir), "*"))
 
 			fmt.Printf("Creating release %s...\n", version)
 			releaseCmd := exec.CommandContext(ctx, "gh", releaseArgs...)
