@@ -137,18 +137,23 @@ cat v1/config.go  # Reference (read-only)
 4. **Safe rollback** - If new code breaks, v1/ still works
 5. **Clear progress** - Can see exactly what's been migrated
 
-### Phase 1: Preserve Current Code
+### Phase 1: Preserve Current Code (Exact Working Copy)
+
+**Goal**: Create exact working copy in v1/ as reference (NO modifications)
+
 1. Create v1/ directory
-2. Move ALL project files to v1/ (not just *.go):
+2. Copy ALL project files to v1/ (preserving exact state):
    - *.go (source code)
-   - go.mod, go.sum (dependencies)
+   - go.mod, go.sum (dependencies - DO NOT modify)
    - Makefile (build commands)
    - README.md (documentation)
    - CLAUDE.md (development rules)
    - .gitignore (git config)
-3. Update v1/go.mod module path if needed
-4. Test v1/ works independently: `cd v1 && make test`
-5. Commit: "Move current working code to v1/ for safe refactoring"
+3. **DO NOT modify anything in v1/** - it must remain working as-is
+4. Test v1/ works exactly as before: `cd v1 && DECKFONTS_DIR=../.data/deckfonts go run . examples --no-sync | head -10`
+5. Commit: "Copy current working code to v1/ for reference during refactoring"
+
+**Important**: v1/ is a read-only reference. All new development happens in root directory.
 ### Phase 2: Create New Split Files (reading from v1/)
 1. Create repos.go - Read repository functions from v1/config.go, copy to new file
 2. Test: `go build`
