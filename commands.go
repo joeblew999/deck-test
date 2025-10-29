@@ -52,7 +52,6 @@ func newEnsureCommand(cfg *config) *cobra.Command {
 				return err
 			}
 			fmt.Println("Tooling and repositories are up to date.")
-			fmt.Printf("export DECKFONTS=%s\n", cfg.deckfontsEnv)
 			return nil
 		},
 	}

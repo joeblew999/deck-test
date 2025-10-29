@@ -3,7 +3,6 @@
 # Variables
 GO_RUN := go run .
 NO_SYNC := --no-sync
-DECKFONTS_PATH := $$(pwd)/.data/deckfonts
 
 # Default target
 all: build
@@ -36,7 +35,7 @@ run:
 		echo "Usage: make run EXAMPLE=deckviz/aapl"; \
 		exit 1; \
 	fi
-	export DECKFONTS=$(DECKFONTS_PATH) && $(GO_RUN) run $(EXAMPLE) $(NO_SYNC)
+	$(GO_RUN) run $(EXAMPLE) $(NO_SYNC)
 
 # View a specific example (requires EXAMPLE variable)
 # Usage: make view EXAMPLE=deckviz/aapl
@@ -46,7 +45,7 @@ view:
 		echo "Usage: make view EXAMPLE=deckviz/aapl"; \
 		exit 1; \
 	fi
-	export DECKFONTS=$(DECKFONTS_PATH) && $(GO_RUN) view $(EXAMPLE) $(NO_SYNC)
+	$(GO_RUN) view $(EXAMPLE) $(NO_SYNC)
 
 # Clean build artifacts
 clean:
