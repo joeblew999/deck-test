@@ -3,15 +3,53 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Directory structure constants
+const (
+	dataDir   = ".data"
+	srcDir    = ".src"
+	distDir   = "dist"
+	binDir    = "bin"
+	goWorkDir = ".src"
+)
+
+// =============================================================================
+// Types
+// =============================================================================
+
+type buildTarget string
+
+const (
+	targetNative buildTarget = "native"
+	targetWASM   buildTarget = "wasm"
+	targetWASI   buildTarget = "wasi"
+)
+
 type binSpec struct {
-	name string
-	pkg  string
+	name        string
+	pkg         string // Go import path
+	repo        string // which repo provides this
+	wasmSupport bool
+	wasiSupport bool
+	requiresUI  bool
+}
+
+type buildResult struct {
+	binary string
+	target buildTarget
+	path   string
+	err    error
 }
 
 type repoConfig struct {
@@ -24,65 +62,58 @@ type repoConfig struct {
 	filter    []string
 	sparseRaw string
 	sparse    []string
+	isData    bool
 }
 
 type config struct {
-	goCmd  string
-	gitCmd string
-
+	goCmd        string
+	gitCmd       string
 	goBinDir     string
 	deckfontsEnv string
-
-	deckviz   repoConfig
-	deckfonts repoConfig
-	dubois    repoConfig
-
-	toolchain []binSpec
-
-	skipEnsure bool
+	repos        map[string]*repoConfig
+	toolchain    []binSpec
+	skipEnsure   bool
 }
+
+// =============================================================================
+// Build Target Methods
+// =============================================================================
+
+func (t buildTarget) buildEnv() (goos, goarch string) {
+	switch t {
+	case targetWASM:
+		return "js", "wasm"
+	case targetWASI:
+		return "wasip1", "wasm"
+	default:
+		return "", ""
+	}
+}
+
+func (t buildTarget) extension() string {
+	if t == targetWASM || t == targetWASI {
+		return ".wasm"
+	}
+	return ""
+}
+
+// =============================================================================
+// Config Loading
+// =============================================================================
 
 func loadConfig() (*config, error) {
 	cfg := &config{
 		goCmd:  getenvDefault("GO", "go"),
 		gitCmd: getenvDefault("GIT", "git"),
-		toolchain: []binSpec{
-			{name: "decksh", pkg: "github.com/ajstarks/decksh/cmd/decksh"},
-			{name: "dshfmt", pkg: "github.com/ajstarks/decksh/cmd/dshfmt"},
-			{name: "dshlint", pkg: "github.com/ajstarks/decksh/cmd/dshlint"},
-			{name: "ebdeck", pkg: "github.com/ajstarks/ebcanvas/ebdeck"},
-			{name: "pdfdeck", pkg: "github.com/ajstarks/deck/cmd/pdfdeck"},
-			{name: "pngdeck", pkg: "github.com/ajstarks/deck/cmd/pngdeck"},
-			{name: "svgdeck", pkg: "github.com/ajstarks/deck/cmd/svgdeck"},
-			{name: "giftsh", pkg: "github.com/ajstarks/giftsh"},
-			{name: "gift", pkg: "github.com/ajstarks/gift"},
-			{name: "gcdeck", pkg: "github.com/ajstarks/giocanvas/gcdeck"},
-		},
-		deckviz: repoConfig{
-			name:   "deckviz",
-			url:    getenvDefault("DECKVIZ_REPO", "https://github.com/ajstarks/deckviz.git"),
-			dir:    getenvDefault("DECKVIZ_DIR", "deckviz"),
-			branch: getenvDefault("DECKVIZ_BRANCH", "master"),
-			depth:  getenvInt("DECKVIZ_DEPTH", 1),
-		},
-		deckfonts: repoConfig{
-			name:   "deckfonts",
-			url:    getenvDefault("DECKFONTS_REPO", "https://github.com/ajstarks/deckfonts.git"),
-			dir:    getenvDefault("DECKFONTS_DIR", "deckfonts"),
-			branch: getenvDefault("DECKFONTS_BRANCH", "master"),
-			depth:  getenvInt("DECKFONTS_DEPTH", 1),
-		},
-		dubois: repoConfig{
-			name:      "dubois-data-portraits",
-			url:       getenvDefault("DUBOIS_REPO", "https://github.com/ajstarks/dubois-data-portraits.git"),
-			dir:       getenvDefault("DUBOIS_DIR", "dubois-data-portraits"),
-			branch:    getenvDefault("DUBOIS_BRANCH", "master"),
-			depth:     getenvInt("DUBOIS_DEPTH", 1),
-			filterRaw: getenvDefault("DUBOIS_FILTER", "--filter=blob:none"),
-			sparseRaw: os.Getenv("DUBOIS_SPARSE"),
-		},
+		repos:  make(map[string]*repoConfig),
 	}
 
+	// Initialize repositories
+	cfg.initDataRepos()
+	cfg.initCodeRepos()
+	cfg.initToolchain()
+
+	// Resolve go bin directory
 	binDir, err := resolveGoBin(cfg.goCmd)
 	if err != nil {
 		return nil, err
@@ -92,60 +123,136 @@ func loadConfig() (*config, error) {
 	return cfg, nil
 }
 
+func (cfg *config) initDataRepos() {
+	cfg.addDataRepo("deckviz", "deckviz", "master")
+	cfg.addDataRepo("deckfonts", "deckfonts", "master")
+	
+	dubois := cfg.addDataRepo("dubois", "dubois-data-portraits", "master")
+	dubois.filterRaw = getenvDefault("DUBOIS_FILTER", "--filter=blob:none")
+	dubois.sparseRaw = os.Getenv("DUBOIS_SPARSE")
+}
+
+func (cfg *config) initCodeRepos() {
+	cfg.addCodeRepo("deck", "master")
+	cfg.addCodeRepo("decksh", "master")
+	cfg.addCodeRepo("ebcanvas", "main")
+	cfg.addCodeRepo("giocanvas", "master")
+	cfg.addCodeRepo("giftsh", "main")
+	cfg.addCodeRepo("gift", "master")
+}
+
+func (cfg *config) initToolchain() {
+	cfg.toolchain = []binSpec{
+		// decksh tools
+		{name: "decksh", pkg: "github.com/ajstarks/decksh/cmd/decksh", repo: "decksh", wasmSupport: true, wasiSupport: true},
+		{name: "dshfmt", pkg: "github.com/ajstarks/decksh/cmd/dshfmt", repo: "decksh", wasmSupport: true, wasiSupport: true},
+		{name: "dshlint", pkg: "github.com/ajstarks/decksh/cmd/dshlint", repo: "decksh", wasmSupport: true, wasiSupport: true},
+		
+		// deck tools
+		{name: "pdfdeck", pkg: "github.com/ajstarks/deck/cmd/pdfdeck", repo: "deck", wasmSupport: true, wasiSupport: true},
+		{name: "pngdeck", pkg: "github.com/ajstarks/deck/cmd/pngdeck", repo: "deck", wasmSupport: true, wasiSupport: true},
+		{name: "svgdeck", pkg: "github.com/ajstarks/deck/cmd/svgdeck", repo: "deck", wasmSupport: true, wasiSupport: true},
+		
+		// gift tools
+		{name: "gift", pkg: "github.com/ajstarks/gift", repo: "gift", wasmSupport: true, wasiSupport: true},
+		{name: "giftsh", pkg: "github.com/ajstarks/giftsh", repo: "giftsh", wasmSupport: true, wasiSupport: true},
+		
+		// UI apps (native only)
+		{name: "ebdeck", pkg: "github.com/ajstarks/ebcanvas/ebdeck", repo: "ebcanvas", requiresUI: true},
+		{name: "gcdeck", pkg: "github.com/ajstarks/giocanvas/gcdeck", repo: "giocanvas", requiresUI: true},
+	}
+}
+
+// =============================================================================
+// Helper Functions for Repo Creation
+// =============================================================================
+
+func (cfg *config) addDataRepo(name, dir, branch string) *repoConfig {
+	repo := &repoConfig{
+		name:   name,
+		url:    getenvDefault(strings.ToUpper(name)+"_REPO", fmt.Sprintf("https://github.com/ajstarks/%s.git", dir)),
+		dir:    getenvDefault(strings.ToUpper(name)+"_DIR", ".data/"+dir),
+		branch: getenvDefault(strings.ToUpper(name)+"_BRANCH", branch),
+		depth:  getenvInt(strings.ToUpper(name)+"_DEPTH", 1),
+		isData: true,
+	}
+	cfg.repos[name] = repo
+	return repo
+}
+
+func (cfg *config) addCodeRepo(name, branch string) *repoConfig {
+	repo := &repoConfig{
+		name:   name,
+		url:    getenvDefault(strings.ToUpper(name)+"_REPO", fmt.Sprintf("https://github.com/ajstarks/%s.git", name)),
+		dir:    getenvDefault(strings.ToUpper(name)+"_DIR", ".src/"+name),
+		branch: getenvDefault(strings.ToUpper(name)+"_BRANCH", branch),
+		depth:  getenvInt(strings.ToUpper(name)+"_DEPTH", 1),
+		isData: false,
+	}
+	cfg.repos[name] = repo
+	return repo
+}
+
+// =============================================================================
+// Config Finalization
+// =============================================================================
+
 func (cfg *config) finalize() error {
-	var err error
-
-	if cfg.deckviz.dir, err = absPath(cfg.deckviz.dir); err != nil {
-		return err
-	}
-	if cfg.deckfonts.dir, err = absPath(cfg.deckfonts.dir); err != nil {
-		return err
-	}
-	if cfg.dubois.dir, err = absPath(cfg.dubois.dir); err != nil {
-		return err
+	// Resolve all repo directories to absolute paths
+	for _, repo := range cfg.repos {
+		var err error
+		if repo.dir, err = absPath(repo.dir); err != nil {
+			return fmt.Errorf("resolve %s dir: %w", repo.name, err)
+		}
+		repo.filter = strings.Fields(strings.TrimSpace(repo.filterRaw))
+		repo.sparse = strings.Fields(strings.TrimSpace(repo.sparseRaw))
 	}
 
+	// Set DECKFONTS environment variable
 	envFonts := strings.TrimSpace(os.Getenv("DECKFONTS"))
 	if envFonts == "" {
-		envFonts = cfg.deckfonts.dir
+		envFonts = cfg.repos["deckfonts"].dir
 	}
+	var err error
 	if cfg.deckfontsEnv, err = absPath(envFonts); err != nil {
 		return err
 	}
 
-	cfg.dubois.filter = strings.Fields(strings.TrimSpace(cfg.dubois.filterRaw))
-	cfg.dubois.sparse = strings.Fields(strings.TrimSpace(cfg.dubois.sparseRaw))
-
 	return nil
 }
 
+// =============================================================================
+// Binary Installation (legacy go install method)
+// =============================================================================
+
+// Update ensureBins to try GitHub releases first
 func (cfg *config) ensureBins(ctx context.Context) error {
-	env := append(os.Environ(), "GOBIN="+cfg.goBinDir)
-	for _, spec := range cfg.toolchain {
-		if _, err := cfg.resolveBinary(spec.name); err == nil {
-			continue
-		}
-		fmt.Printf("Installing %s...\n", spec.name)
-		cmd := exec.CommandContext(ctx, cfg.goCmd, "install", spec.pkg+"@latest")
-		cmd.Env = env
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("install %s: %w", spec.name, err)
-		}
-	}
-	return nil
+	// Download from GitHub releases only
+	return cfg.downloadReleaseBinaries(ctx)
 }
+
+// =============================================================================
+// Repository Management
+// =============================================================================
 
 func (cfg *config) ensureRepos(ctx context.Context) error {
-	if err := cfg.gitCloneOrUpdate(ctx, &cfg.deckviz); err != nil {
-		return err
+	for _, repo := range cfg.repos {
+		if repo.isData {
+			if err := cfg.gitCloneOrUpdate(ctx, repo); err != nil {
+				return err
+			}
+		}
 	}
-	if err := cfg.gitCloneOrUpdate(ctx, &cfg.deckfonts); err != nil {
-		return err
-	}
-	if err := cfg.gitCloneOrUpdate(ctx, &cfg.dubois); err != nil {
-		return err
+	return nil
+}
+
+func (cfg *config) ensureBuildRepos(ctx context.Context) error {
+	for _, repo := range cfg.repos {
+		if !repo.isData {
+			if err := cfg.gitCloneOrUpdate(ctx, repo); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -169,6 +276,8 @@ func (cfg *config) gitClone(ctx context.Context, repo *repoConfig) error {
 	if err := cfg.runGit(ctx, args...); err != nil {
 		return err
 	}
+
+	// Handle sparse checkout if configured
 	if len(repo.sparse) > 0 {
 		if err := cfg.runGit(ctx, "-C", repo.dir, "sparse-checkout", "init", "--cone"); err != nil {
 			return err
@@ -199,6 +308,8 @@ func (cfg *config) gitUpdate(ctx context.Context, repo *repoConfig) error {
 	if err := cfg.runGit(ctx, "-C", repo.dir, "reset", "--hard", "origin/"+repo.branch); err != nil {
 		return err
 	}
+
+	// Update sparse checkout if configured
 	if len(repo.sparse) > 0 {
 		setArgs := append([]string{"-C", repo.dir, "sparse-checkout", "set"}, repo.sparse...)
 		if err := cfg.runGit(ctx, setArgs...); err != nil {
@@ -213,4 +324,243 @@ func (cfg *config) runGit(ctx context.Context, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// =============================================================================
+// Workspace Management
+// =============================================================================
+
+func (cfg *config) ensureWorkspace(ctx context.Context) error {
+	if err := os.MkdirAll(".src", 0755); err != nil {
+		return fmt.Errorf("create .src dir: %w", err)
+	}
+
+	workFile := ".src/go.work"
+	
+	// Build workspace content
+	var dirs []string
+	dirs = append(dirs, "..") // Parent directory (deck-test)
+	
+	for _, repo := range cfg.repos {
+		if !repo.isData {
+			repoName := filepath.Base(repo.dir)
+			dirs = append(dirs, "./"+repoName)
+		}
+	}
+
+	// Create go.work file
+	content := "go 1.25\n\n"
+	for _, dir := range dirs {
+		content += fmt.Sprintf("use %s\n", dir)
+	}
+
+	if err := os.WriteFile(workFile, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write go.work: %w", err)
+	}
+
+	fmt.Println("✓ Created .src/go.work workspace file")
+	return nil
+}
+
+// =============================================================================
+// Build Functions
+// =============================================================================
+
+func (cfg *config) buildBinary(ctx context.Context, spec binSpec, target buildTarget, outputDir string) buildResult {
+	result := buildResult{
+		binary: spec.name,
+		target: target,
+	}
+
+	// Check target support
+	if target == targetWASM && !spec.wasmSupport {
+		result.err = fmt.Errorf("WASM not supported (requires %v)", getRequirement(spec))
+		return result
+	}
+	if target == targetWASI && !spec.wasiSupport {
+		result.err = fmt.Errorf("WASI not supported (requires %v)", getRequirement(spec))
+		return result
+	}
+
+	// Build filename with descriptive suffix (flat structure for GitHub releases)
+	filename := cfg.buildFilename(spec.name, target)
+	outPath := filepath.Join(outputDir, filename)
+	result.path = outPath
+
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		result.err = fmt.Errorf("mkdir: %w", err)
+		return result
+	}
+
+	// Make output path absolute (needed because we run from .src/)
+	absOutPath, err := filepath.Abs(outPath)
+	if err != nil {
+		result.err = fmt.Errorf("abs path: %w", err)
+		return result
+	}
+
+	// Build from .src/ directory using go.work
+	fmt.Printf("Building %s for %s...\n", spec.name, target)
+
+	cmd := exec.CommandContext(ctx, cfg.goCmd, "build", "-o", absOutPath, spec.pkg)
+	cmd.Dir = ".src" // Run from workspace directory
+
+	// Set cross-compilation environment
+	goos, goarch := target.buildEnv()
+	env := os.Environ()
+	if goos != "" {
+		env = append(env, "GOOS="+goos)
+	}
+	if goarch != "" {
+		env = append(env, "GOARCH="+goarch)
+	}
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		result.err = fmt.Errorf("build failed: %w", err)
+		return result
+	}
+
+	fmt.Printf("✓ Built %s\n", filename)
+	return result
+}
+
+// buildFilename creates a descriptive filename for GitHub releases (flat structure)
+func (cfg *config) buildFilename(name string, target buildTarget) string {
+	switch target {
+	case targetWASM:
+		return fmt.Sprintf("%s-wasm.wasm", name)
+	case targetWASI:
+		return fmt.Sprintf("%s-wasi.wasm", name)
+	default: // native
+		goos := runtime.GOOS
+		goarch := runtime.GOARCH
+		ext := ""
+		if goos == "windows" {
+			ext = ".exe"
+		}
+		return fmt.Sprintf("%s-%s-%s%s", name, goos, goarch, ext)
+	}
+}
+
+func (cfg *config) buildAll(ctx context.Context, targets []buildTarget, outputDir string) ([]buildResult, error) {
+	var results []buildResult
+	for _, spec := range cfg.toolchain {
+		for _, target := range targets {
+			result := cfg.buildBinary(ctx, spec, target, outputDir)
+			results = append(results, result)
+		}
+	}
+	return results, nil
+}
+
+func getRequirement(spec binSpec) string {
+	if spec.requiresUI {
+		return "UI/graphics"
+	}
+	return "platform support"
+}
+
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
+func copyFile(src, dst string) error {
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	if _, err = io.Copy(destination, source); err != nil {
+		return err
+	}
+
+	// Preserve executable permissions
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(dst, info.Mode())
+}
+// =============================================================================
+// GitHub Release Download
+// =============================================================================
+
+func (cfg *config) downloadReleaseBinaries(ctx context.Context) error {
+	// Check if gh CLI is installed
+	if _, err := exec.LookPath("gh"); err != nil {
+		return fmt.Errorf("gh CLI not found. Install it with: brew install gh")
+	}
+
+	// Get latest release info
+	fmt.Println("Checking for latest release...")
+	listCmd := exec.CommandContext(ctx, "gh", "release", "list", "--limit", "1")
+	output, err := listCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list releases: %w", err)
+	}
+
+	// Parse release tag from output (format: "TAG\tTITLE\tTYPE\tDATE")
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 0 {
+		return fmt.Errorf("no releases found")
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) == 0 {
+		return fmt.Errorf("failed to parse release info")
+	}
+	releaseTag := fields[0]
+	fmt.Printf("Latest release: %s\n", releaseTag)
+
+	// Create dist directory if it doesn't exist
+	if err := os.MkdirAll(distDir, 0755); err != nil {
+		return fmt.Errorf("create dist dir: %w", err)
+	}
+
+	// Download native binaries for current platform
+	downloaded := 0
+	for _, spec := range cfg.toolchain {
+		filename := cfg.buildFilename(spec.name, targetNative)
+		destPath := filepath.Join(distDir, filename)
+
+		// Skip if already exists
+		if _, err := os.Stat(destPath); err == nil {
+			fmt.Printf("✓ %s already exists\n", filename)
+			continue
+		}
+
+		fmt.Printf("Downloading %s...\n", filename)
+		downloadCmd := exec.CommandContext(ctx, "gh", "release", "download", releaseTag, "-p", filename, "-D", distDir)
+		downloadCmd.Stdout = os.Stdout
+		downloadCmd.Stderr = os.Stderr
+		if err := downloadCmd.Run(); err != nil {
+			fmt.Printf("⚠ Failed to download %s: %v\n", filename, err)
+			continue
+		}
+
+		// Make executable
+		if err := os.Chmod(destPath, 0755); err != nil {
+			fmt.Printf("⚠ Failed to chmod %s: %v\n", filename, err)
+		}
+
+		downloaded++
+		fmt.Printf("✓ Downloaded %s\n", filename)
+	}
+
+	if downloaded == 0 {
+		fmt.Println("No new binaries downloaded (all already present)")
+	} else {
+		fmt.Printf("✓ Downloaded %d binaries\n", downloaded)
+	}
+
+	return nil
 }

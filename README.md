@@ -1,31 +1,44 @@
 # deck-test
 
-Everything you need fits in one short sequence.
+Test harness for deck examples with WASM/WASI support.
 
-## Do This
+**Releases:** https://github.com/joeblew999/deck-test/releases
 
-1. **Install the CLI (installs deps, clones repos, wires completions):**
-   ```sh
-   go run ./main.go setup
-   ```
-2. **List what you can run:**
-   ```sh
-   decktool examples
-   ```
-3. **Render an example (change the name as needed):**
-   ```sh
-   decktool run deckviz/fire
-   ```
-4. **Open the result:**
-   ```sh
-   decktool view deckviz/fire
-   ```
+## Quick Start
 
-## Extras You Might Want
+```bash
+# Get binaries
+go run . ensure
 
-- Skip repo/binary checks if you just built everything:
-  ```sh
-  decktool run deckviz/fire --no-sync
-  ```
-- Output lands in the example directory (e.g. `deckviz/fire/fire.xml`).
-- The standard repos (`deckviz`, `deckfonts`, `dubois-data-portraits`) sit beside this README; completions are already hooked into your shell.
+# List examples
+decktool examples
+
+# Run an example
+decktool run deckviz/fire
+```
+
+## Build & Release
+
+```bash
+# Build all binaries (native, WASM, WASI)
+decktool dev-build
+
+# Create GitHub release
+decktool dev-release
+```
+
+## What It Does
+
+- Downloads deck example data (deckviz, dubois, deckfonts)
+- Clones & builds deck Go repos (decksh, pdfdeck, gift, etc.)
+- Compiles to native, WASM, and WASI targets
+- Runs examples and opens results
+
+## Commands
+
+- `ensure` - Get binaries from GitHub release or build locally
+- `examples` - List all available examples
+- `run [example]` - Lint and render an example
+- `view [example]` - Open example in ebdeck
+- `dev-build` - Build binaries for native/WASM/WASI
+- `dev-release` - Create GitHub release with all binaries

@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-The current deck tooling (`decksh`, `pdfdeck`, `pngdeck`, `svgdeck`, `ebdeck`, `dshfmt`, `dshlint`, etc.) is distributed as native Go binaries installed via `go install`. To broaden the environments in which these tools can run, we want to evaluate compiling each binary to WebAssembly (WASM) for in-browser usage and to WASI (WebAssembly System Interface) for headless/sandboxed command-line execution.
+The current deck tooling (`decksh`, `pdfdeck`, `pngdeck`, `svgdeck`, `ebdeck`, `dshfmt`, `dshlint`, etc.) is distributed as native Go binaries installed via `go install`. We want the decktool CLI to produce WebAssembly (WASM) and WASI artifacts for every deck binary so they can be consumed outside of native environments. Whether individual binaries succeed or fail to compile will be discovered during implementation—this ADR establishes the tooling changes needed to attempt both targets for all binaries.
 
 Primary drivers:
 
@@ -16,24 +16,27 @@ Primary drivers:
 
 Constraints:
 
-- Some binaries depend on graphical libraries (e.g., `ebdeck` uses Ebiten) that may not yet support WASM/WASI.
-- Deckviz examples read files from the local filesystem; we need a strategy for packaging data or providing a virtual filesystem.
+- Decktool must clone/update the required repositories before building—`go install` alone is insufficient once we produce custom WASM/WASI bundles.
+- Deckviz examples read files from the local filesystem; we need a strategy for packaging data or providing a virtual filesystem when running under WASM/WASI.
 - Existing native workflow must remain supported for power users.
 
 ## Decision
 
-Compile the deck tooling into portable artifacts with clear responsibilities:
+Teach the native `decktool` CLI to orchestrate builds that output both WASM and WASI artifacts for *every* deck binary. The CLI will:
 
-- CLI-oriented binaries (`decksh`, `dshfmt`, `dshlint`) target **WASI** so they can run headless in sandboxed runtimes.
-- Rendering/output binaries (`pdfdeck`, `pngdeck`, `svgdeck`) target **WASM** first (and WASI where feasible) by emitting results to in-memory buffers or virtual file systems instead of the host filesystem.
-- Graphical viewers (`ebdeck`, `gcdeck`) target **WASM** to paint onto HTML canvas elements; native builds continue for desktop usage.
+- Clone/update all required deck repositories (deck, decksh, ebcanvas, etc.) into a workspace so the sources are available.
+- Run `go build` for each binary with `GOOS=js GOARCH=wasm` to produce WASM modules.
+- Run `go build` for each binary with `GOOS=wasip1 GOARCH=wasm` to produce WASI modules (still recorded even if compilation fails; failures are surfaced to the user).
+- Package the resulting artifacts in a deterministic output directory so downstream consumers (and future commands) can fetch them.
+
+This replaces the previous expectation that end users run `go install` directly; `decktool` becomes the single entry point for producing portable builds while native binaries remain available.
 
 Implementation will proceed in stages:
 
-1. **WASI-first for CLI tools**: build `decksh`, `dshfmt`, and `dshlint` for WASI where feasible; wrap file IO using WASI preview APIs.
-2. **WASM for outputs and viewers**: prototype renderers (`pdfdeck`, `pngdeck`, `svgdeck`) as WASM modules that emit downloadable artifacts (memory buffers streamed to the browser) and graphical viewers (`ebdeck`, `gcdeck`) that paint to HTML canvas.
-3. **Packaging**: expose `decktool wasm` and `decktool wasi` commands that produce ready-to-run bundles (WASM/WASI binary plus HTML or stub runner scripts).
-4. **Distribution**: host the artifacts via GitHub Releases or a CDN for easy consumption.
+1. Extend `decktool` with build commands (e.g., `decktool build wasm`, `decktool build wasi`) that iterate over the deck binary list, clone necessary repos, and run the appropriate `go build` invocations.
+2. Capture per-binary results (success/failure, artifact paths) so users can see which builds succeeded without manually retrying.
+3. Package outputs into a structured directory (or archive) ready for publishing; future automation can upload these artifacts.
+4. Keep native builds intact; this ADR does not deprecate the existing workflow.
 
 Native binaries remain available; WASM/WASI builds supplement them.
 
@@ -41,14 +44,13 @@ Native binaries remain available; WASM/WASI builds supplement them.
 
 Positive:
 
-- Deck tooling becomes portable across browsers and sandboxed runtimes.
-- Graphical viewers (`ebdeck`, `gcdeck`) can run in-browser via WASM, enabling interactive previews without native installs.
-- Output generators (`pdfdeck`, `pngdeck`, `svgdeck`) no longer require native binaries when run in WASM/WASI; they stream results to the caller for download or further processing.
-- CI pipelines/serve → easier to run deck conversions without local Go toolchain.
+- One command (`decktool build wasm|wasi`) attempts builds for every deck binary, simplifying distribution of portable artifacts.
+- Build outputs are reproducible because decktool manages repository checkout and build flags.
+- Portable artifacts remove the dependency on `go install` for consumers that need WASM/WASI builds.
 
 Negative / Open Questions:
 
-- Ebiten (used by `ebdeck`/`gcdeck`) may have limitations in WASM; requires verification.
+- Some binaries may fail to compile for WASM or WASI; decktool must report failures and continue building the rest.
 - WASM bundles could be large if fonts/assets are embedded.
 - Need an approach to provide deckviz data/files in browser and WASI environments (e.g., embed data, fetch over HTTP, or mount WASI virtual FS).
 - Viewer UIs must adapt to browser event models and canvas rendering.
@@ -56,9 +58,8 @@ Negative / Open Questions:
 
 Next steps:
 
-1. Audit each deck binary for WASM/WASI compatibility (Go `GOOS=js GOARCH=wasm` / `GOOS=wasip1 GOARCH=wasm`), documenting required build flags, external dependencies, and current blockers in a compatibility matrix.
-2. Build proof-of-concept WASI versions of the CLI tools (`decksh`, `dshfmt`, `dshlint`) that exercise the compatibility matrix, wiring file access through WASI preview APIs and validating non-regression with the existing test suite.
-3. Prototype WASM renderers (`pdfdeck`, `pngdeck`, `svgdeck`) that stream outputs instead of writing to disk, and WASM viewers (`ebdeck`, `gcdeck`) that paint to canvas.
-4. Evaluate WASI feasibility for renderers once streaming/file APIs are proven.
-5. Keep `decktool` as a native build orchestrator that produces WASM/WASI bundles.
-6. Design packaging/distribution plan for releasing WASM/WASI artifacts.
+1. Inventory the deck binaries and define a compatibility matrix capturing required repos, build commands, and expected artifact names.
+2. Implement the new decktool build commands that clone repos, invoke `go build` for WASM/WASI, and store artifacts/results.
+3. Ensure build logs clearly report success/failure per binary so future ADRs can address any gaps.
+4. Investigate strategies for handling data/assets in WASM/WASI (virtual FS, HTTP fetching, embedding) and document follow-up work.
+5. Design packaging/distribution plan for releasing WASM/WASI artifacts produced by decktool.

@@ -27,12 +27,13 @@ go.work.sum
 # env file
 .env
 
-# Local clones for deck tooling
-deckviz/
-deckfonts/
-dubois-data-portraits/
-bin/
-
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Build artifacts and repositories
+.data/
+.src/
+bin/
+dist/
+

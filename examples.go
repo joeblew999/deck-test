@@ -30,8 +30,8 @@ func (cfg *config) listExamples() ([]string, error) {
 
 func (cfg *config) examplesBySource() (map[string][]string, error) {
 	return map[string][]string{
-		"deckviz": collectExampleNames(cfg.deckviz.dir),
-		"dubois":  collectExampleNames(cfg.dubois.dir),
+		"deckviz": collectExampleNames(cfg.repos["deckviz"].dir),
+		"dubois":  collectExampleNames(cfg.repos["dubois"].dir),
 	}, nil
 }
 
@@ -84,7 +84,9 @@ func (cfg *config) renderDeck(ctx context.Context, dir, script, output string) e
 
 	cmd := exec.CommandContext(ctx, deckshPath, script)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "DECKFONTS="+cfg.deckfontsEnv)
+	deckfontsEnv := "DECKFONTS=" + cfg.deckfontsEnv
+	fmt.Fprintf(os.Stderr, "DEBUG: Setting %s\n", deckfontsEnv)
+	cmd.Env = append(os.Environ(), deckfontsEnv)
 	cmd.Stdout = file
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -118,9 +120,9 @@ func (cfg *config) resolveBinary(name string) (string, error) {
 func (cfg *config) exampleDir(source, name string) (string, error) {
 	switch source {
 	case "deckviz":
-		return filepath.Join(cfg.deckviz.dir, name), nil
+		return filepath.Join(cfg.repos["deckviz"].dir, name), nil
 	case "dubois":
-		return filepath.Join(cfg.dubois.dir, name), nil
+		return filepath.Join(cfg.repos["dubois"].dir, name), nil
 	default:
 		return "", fmt.Errorf("unknown example source %q", source)
 	}
