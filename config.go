@@ -291,6 +291,31 @@ func getShellRCPath(home, shell string) string {
 	}
 }
 
+// resolveBinary resolves the path to a binary by searching in order:
+// 1. dist directory (our built/downloaded binaries)
+// 2. PATH (system-installed binaries)
+// 3. GOBIN directory (go-installed binaries)
+func (cfg *config) resolveBinary(name string) (string, error) {
+	// Check dist/ directory first (our downloaded binaries)
+	distPath := cfg.getBinaryPath(name)
+	if _, err := os.Stat(distPath); err == nil {
+		return distPath, nil
+	}
+
+	// Fallback to PATH
+	if path, err := exec.LookPath(name); err == nil {
+		return path, nil
+	}
+
+	// Finally check goBinDir
+	path := cfg.getGoBinPath(name)
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+
+	return "", fmt.Errorf("%s not found in %s, PATH, or %s", name, cfg.distDir, cfg.goBinDir)
+}
+
 // =============================================================================
 // Repository Management
 // =============================================================================
