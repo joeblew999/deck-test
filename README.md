@@ -11,20 +11,20 @@ Test harness for deck examples with WASM/WASI support.
 go run . ensure
 
 # List examples
-decktool examples
+go run . examples
 
 # Run an example
-decktool run deckviz/fire
+go run . deckviz/fire
 ```
 
 ## Build & Release
 
 ```bash
 # Build all binaries (native, WASM, WASI)
-decktool dev-build
+go run . dev-build
 
-# Create GitHub release
-decktool dev-release
+# Create GitHub release ( that ensure can use later to bring them back down)
+go run . dev-release
 ```
 
 ## What It Does

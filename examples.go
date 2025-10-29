@@ -28,10 +28,15 @@ func (cfg *config) listExamples() ([]string, error) {
 }
 
 func (cfg *config) examplesBySource() (map[string][]string, error) {
-	return map[string][]string{
-		"deckviz": collectExampleNames(cfg.repos["deckviz"].dir),
-		"dubois":  collectExampleNames(cfg.repos["dubois"].dir),
-	}, nil
+	result := make(map[string][]string)
+	for name, repo := range cfg.repos {
+		// Only include data repos that contain examples (not deckfonts)
+		if !repo.isData || name == "deckfonts" {
+			continue
+		}
+		result[name] = collectExampleNames(repo.dir)
+	}
+	return result, nil
 }
 
 func (cfg *config) runExamples(ctx context.Context, examples []string) (map[string]string, error) {
