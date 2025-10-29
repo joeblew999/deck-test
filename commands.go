@@ -287,7 +287,7 @@ Examples:
 
 			// Default output directory
 			if outputDir == "" {
-				outputDir = distDir
+				outputDir = cfg.distDir
 			}
 
 			fmt.Printf("Building %d binaries for targets: %v\n", len(cfg.toolchain), buildTargets)
@@ -332,7 +332,7 @@ Examples:
 	}
 
 	cmd.Flags().StringSliceVar(&targets, "targets", []string{"native", "wasm", "wasi"}, "Comma-separated build targets (native,wasm,wasi)")
-	cmd.Flags().StringVarP(&outputDir, "output", "o", distDir, "Output directory for built binaries")
+	cmd.Flags().StringVarP(&outputDir, "output", "o", "", fmt.Sprintf("Output directory for built binaries (default: %s)", cfg.distDir))
 	cmd.Flags().BoolVar(&skipSync, "no-sync", false, "Skip repository sync before building")
 
 	return cmd
