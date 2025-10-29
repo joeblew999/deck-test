@@ -108,13 +108,68 @@ util.go (~100 lines)
 
 ## Migration Plan
 
-1. Create new files (repos.go, paths.go, build.go, workspace.go, util.go)
-2. Move functions from config.go to new files
-3. Test after each file is created
-4. Remove moved functions from config.go
-5. Final test that everything still works
-6. Commit
+### Why Move To v1/ First
 
+**Critical insight**: Moving current code to v1/ BEFORE splitting allows reading v1/config.go as reference while writing new files, instead of destructive in-place editing.
+
+#### Without v1/:
+```bash
+# Risky: Must edit config.go in place with sed/awk
+sed -n '340,360p' config.go > repos.go  # Extract functions
+sed -i '340,360d' config.go             # Delete from original
+# If something breaks, hard to recover
+```
+
+#### With v1/:
+```bash
+# Safe: Read from v1/, write to new files
+cat v1/config.go  # Reference (read-only)
+# Copy functions to new repos.go, paths.go, etc.
+# Old code still works in v1/ for comparison
+# No destructive edits with sed/awk
+```
+
+#### Benefits:
+
+1. **No more sed/awk editing** - Just read v1/ and write new files
+2. **Old code preserved** - v1/ keeps working during migration
+3. **Easy comparison** - Can diff v1/ vs new code
+4. **Safe rollback** - If new code breaks, v1/ still works
+5. **Clear progress** - Can see exactly what's been migrated
+
+### Phase 1: Preserve Current Code
+1. Create v1/ directory
+2. Move all *.go files to v1/
+3. Update imports/paths as needed
+4. Test v1/ works
+5. Commit: "Move current code to v1/ for safe refactoring"
+
+### Phase 2: Create New Split Files (reading from v1/)
+1. Create repos.go - Read repository functions from v1/config.go, copy to new file
+2. Test: `go build`
+3. Create paths.go - Read path functions from v1/config.go, copy to new file  
+4. Test: `go build`
+5. Create build.go - Read build functions from v1/config.go, copy to new file
+6. Test: `go build`
+7. Create workspace.go - Read workspace function from v1/config.go, copy to new file
+8. Test: `go build`
+9. Create util.go - Read utility functions from v1/config.go, copy to new file
+10. Test: `go build`
+11. Create config.go - Copy core config struct, constants, loadConfig(), finalize()
+12. Test: `go build`
+
+### Phase 3: Validate
+1. Run full test suite: `make test`
+2. Compare behavior with v1/
+3. Commit: "Split config into single-responsibility files"
+
+### Phase 4: Cleanup
+1. Delete v1/ directory once confident
+2. Commit: "Remove v1/ after successful migration"
+
+### Key Principle
+
+**Never use sed/awk to destructively edit files. Always read from source, write to new destination.**
 ## Risks
 
 - Must ensure all functions remain accessible (exported names)
